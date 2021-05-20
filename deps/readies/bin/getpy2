@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+
+# Check that Python 2 is installed (by checking for python, python2, and python2.7 commands).
+# If so, verify that python2 and python2.7 commands are present.
+# If Python 2 is not found on the system, try to install it and repeat the abose checks.
+
+# set -e
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+ROOT=$(cd $HERE/../..; pwd)
+READIES=$ROOT/readies
+. $READIES/shibumi/defs
+
+if [[ $1 == --help || $1 == help || $HELP == 1 ]]; then
+	cat <<-END
+		[ARGVARS...] getpy2 [--help|help]
+
+		Argument variables:
+		CHECK=1      Only check and report, do not install
+		PIP=0        Avoid installing pip
+		PIP=version  Also install pip of the specified version
+		VENV=1       Install virtualenv
+		VENV=dir     Install virtualenv, create one in `dir`
+		FORCE=1      Install even if present
+		FIX=1        Create /usr/local/bin/python2 symlink (default on macOS)
+		VERBOSE=1    Print commands
+		HELP=1       Print help
+
+	END
+	exit 0
+fi
+
+[[ $VERBOSE == 1 ]] && { set -x; PS4='$LINENO: '; }
+[[ -z $PIP ]] && PIP=1
+
+# pip 20.x is broken is the sense that it will not respect virtualenv's system-site-packages
+# thus requiring packages to be built from source in order to be installed.
+# Until this is fixed we stick to pip 19.3.1.
+[[ $PIP == 1 ]] && PIP=19.3.1
+
+# the end state should be:
+# in a python2 venv: `python` command (don't fix)
+# in a non-python2 venv or outside venv:
+#   mandatory: `python2` command (fix)
+#   optional: `python2.7` command (don't fix)
+#   optional: `python` command (don't fix)
+
+fix_variants() {
+	if [[ ! -z $VIRTUAL_ENV ]]; then
+		[[ ! -z $PYTHON && "$PYTHON_VER" == "2"  ]] && return
+	fi
+
+	if [[ -z $PYTHON2 ]]; then
+		if [[ ! -z $PYTHON27 ]]; then
+			ln -sf $PYTHON27 /usr/local/bin/python2
+		elif [[ ! -z $PYTHON && "$PYTHON_VER" == "2"  ]]; then
+			ln -sf $PYTHON /usr/local/bin/python2
+		fi
+	fi
+}
+
+check_variants() {
+	PYTHON=$(command -v python)
+	PYTHON2=$(command -v python2)
+	PYTHON27=$(command -v python2.7)
+
+	MYPY=""
+	PYTHON_VER=""
+	
+	if [[ ! -z $PYTHON ]]; then
+		PYTHON_VER="$(python --version 2>&1 | cut -d" " -f2 | cut -d. -f1)"
+		[[ $PYTHON_VER == 2 ]] && MYPY=$PYTHON
+	fi
+	
+	[[ ! -z $PYTHON2 ]]  && MYPY=$PYTHON2
+	[[ ! -z $PYTHON27 ]] && MYPY=$PYTHON27
+	
+	if [[ ! -z $FIX ]]; then fix_variants; fi
+}
+
+install_python() {
+	if [[ $(uname) == Darwin ]]; then
+		if [[ -z $(command -v brew) ]]; then
+			eprint "Unable to install Python without brew. Aborting."
+			eprint "Please install brew and retry."
+			exit 1
+		fi
+
+		# try to fix /usr/local/bin/python on macOS unless stated otherwize
+		[[ $FIX != 0 ]] && export FIX=1
+	fi
+
+	if [[ ! -z $(command -v apt-get) ]]; then
+		runn apt-get -qq update
+		runn apt-get -qq install -y python
+	elif [[ ! -z $(command -v dnf) ]]; then
+		runn dnf install -y python2
+	elif [[ ! -z $(command -v yum) ]]; then
+		runn yum install -y python2
+	elif [[ ! -z $(command -v zypper) ]]; then
+		runn zypper install -y python2
+	elif [[ ! -z $(command -v apk) ]]; then
+		runn apk update
+		runn apk add python2
+	elif [[ ! -z $(command -v brew) ]]; then
+		runn brew install python2
+	elif [[ ! -z $(command -v pkg) ]]; then
+		runn pkg install -y python2
+	fi
+}
+
+install_pip() {
+	if [[ $FORCE != 1 ]]; then
+		[[ $($MYPY -m pip --version > /dev/null 2>&1; echo $?) == 0 ]] && return
+	fi
+	
+	pipspec=""
+	[[ $PIP != 1 ]] && pipspec="pip==$PIP"
+	
+	local packs="ca-certificates wget"
+
+	if [[ ! -z $(command -v apt-get) ]]; then
+		runn apt-get -qq update
+		runn apt-get -qq install -y $packs
+	elif [[ ! -z $(command -v dnf) ]]; then
+		runn dnf install -y $packs
+	elif [[ ! -z $(command -v yum) ]]; then
+		runn yum install -y $packs
+	elif [[ ! -z $(command -v zypper) ]]; then
+		packs+=" python-xml"
+		runn zypper install -y $packs
+	elif [[ ! -z $(command -v apk) ]]; then
+		runn apk update
+		runn apk add $packs
+	elif [[ ! -z $(command -v brew) ]]; then
+		runn brew install wget
+	elif [[ ! -z $(command -v pkg) ]]; then
+		runn pkg install -y $packs
+	fi
+
+	runn wget -q -O /tmp/get-pip.py https://bootstrap.pypa.io/get-pip.py
+	runn $MYPY /tmp/get-pip.py $pipspec
+	rm -f /tmp/get-pip.py
+}
+
+check_variants
+
+[[ ! -z $MYPY && $PIP == 0 && $FORCE != 1 ]] && exit 0
+if [[ $CHECK == 1 ]]; then
+	if $MYPY -m pip --version 2>&1 > /dev/null; then exit 0; fi
+	exit 1
+fi
+
+[[ -z $MYPY || $FORCE == 1 ]] && install_python
+
+check_variants
+if [[ -z $(command -v $MYPY) ]]; then
+	eprint "Cannot install Python2. Aborting."
+	exit 1
+fi
+
+[[ $PIP != 0 ]] && install_pip
+
+PIP_USER=""
+if [[ $(uname) == Darwin ]]; then
+	PIP_USER="--user"
+fi
+
+REQ=$READIES/paella/requirements.txt
+if [[ ! -z $VENV && $VENV != 0 ]]; then
+	runn $MYPY -m pip install ${PIP_USER} virtualenv
+	[[ $VENV == 1 ]] && VENV=$HOME/venv
+	runn $MYPY -m virtualenv $VENV --system-site-packages
+	runn "{ . $VENV/bin/activate && python -m pip install -r $REQ; }"
+else
+	runn $MYPY -m pip install ${PIP_USER} -r $REQ
+fi
+
+exit 0

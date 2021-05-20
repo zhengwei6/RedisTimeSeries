@@ -1,0 +1,17 @@
+
+if [ -z `echo $BASH | grep bash` ]; then
+	>&2 echo "sourced: warning: not running bash, some scripts may malfunction"
+fi
+
+__sourced() {
+	local d=$1
+	[[ -z "$d" || ! -d "$d" ]] && return
+	local f
+	for f in $d/*; do
+			. $f
+	done
+}
+
+__sourced $1
+
+unset -f __sourced
