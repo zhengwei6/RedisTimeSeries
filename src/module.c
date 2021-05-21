@@ -921,6 +921,23 @@ int TSDB_load(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     return REDISMODULE_OK;
 }
 
+int TSDB_train(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+	RedisModule_AutoMemory(ctx);
+	if (argc < 2) {
+        return RedisModule_WrongArity(ctx);
+    }
+	RedisModuleString *keyName = argv[1];
+	CreateArima arima = {0};
+	// call parser
+	if (parseArimaArgs(ctx, argv, argc, &arima) != REDISMODULE_OK) {
+		return REDISMODULE_ERR;
+	}
+	printf("%d %d %d %d\n", arima.p, arima.q, arima.d, arima.N);
+	
+	
+	return REDISMODULE_OK;
+}
+
 
 int NotifyCallback(RedisModuleCtx *original_ctx,
                    int type,
@@ -1035,7 +1052,10 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
 
     if(RedisModule_CreateCommand(ctx, "ts.load", TSDB_load, "write deny-oom", 1, -1, 3) == REDISMODULE_ERR)
         return REDISMODULE_ERR;
-    
+   	
+	if(RedisModule_CreateCommand(ctx, "ts.train", TSDB_train, "write deny-oom", 1, -1, 3) == REDISMODULE_ERR)
+		return REDISMODULE_ERR;
+	
     if (RedisModule_CreateCommand(ctx, "ts.madd", TSDB_madd, "write deny-oom", 1, -1, 3) ==
         REDISMODULE_ERR)
         return REDISMODULE_ERR;

@@ -45,6 +45,8 @@ int ParseDuplicatePolicy(RedisModuleCtx *ctx,
                          DuplicatePolicy *policy);
 
 int parseCreateArgs(RedisModuleCtx *ctx, RedisModuleString **argv, int argc, CreateCtx *cCtx);
+int parseArimaArgs(RedisModuleCtx *ctx, RedisModuleString **argv, int argc, CreateArima *arima);
+
 
 int _parseAggregationArgs(RedisModuleCtx *ctx,
                           RedisModuleString **argv,

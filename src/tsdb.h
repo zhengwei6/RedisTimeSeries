@@ -23,6 +23,16 @@ typedef struct CompactionRule
     timestamp_t startCurrentTimeBucket;
 } CompactionRule;
 
+typedef struct CreateArima
+{
+	int p;
+	int q;
+	int d;
+	int N;
+	size_t labelsCount;
+	Label *labels;
+} CreateArima;
+
 typedef struct CreateCtx
 {
     long long retentionTime;
