@@ -32,6 +32,11 @@
 #include "rmutil/alloc.h"
 #include "rmutil/strings.h"
 #include "rmutil/util.h"
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <signal.h>
 
 #ifndef REDISTIMESERIES_GIT_SHA
 #define REDISTIMESERIES_GIT_SHA "unknown"
@@ -929,11 +934,51 @@ int TSDB_train(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 	RedisModuleString *keyName = argv[1];
 	CreateArima arima = {0};
 	// call parser
+    int pid, ppid;
+    void *shmaddr = NULL;
+    int shmid;
+    key_t key = (key_t) 666;
+    shmid = shmget(key, 4096, 0644 | IPC_CREAT);
+    if(shmid == -1) {
+        perror("shmget failed\n");
+        exit(EXIT_FAILURE);
+    }
+
+    ppid = getpid();
+    char c_pid[10];
+    char c_shmid[10];
+	    printf("ppid: %d\n", ppid);
+    if ((pid = fork()) < 0) {
+        perror("fork");
+        exit(1);
+    }
+    if (pid == 0) { /* child */
+        //exec
+        sprintf(c_pid, "%d", ppid);
+        sprintf(c_shmid, "%d", shmid);
+        execl("./arimatest", c_pid, c_shmid, NULL);
+    }
+    shmaddr = shmat(shmid, NULL, 0);
+    if(shmaddr == (void *)-1) {
+        perror("shmat fail\n");
+        exit(EXIT_FAILURE);
+    }
+    int data;
+    int pr;
+    pr=wait(NULL);
+    // memory copy
+    memcpy(&data, shmaddr, sizeof(data));
+    if (shmdt(shmaddr) == -1) {
+        perror("shmdt failed\n");
+        exit(EXIT_FAILURE);
+    }
+    printf("parent get data: %d\n", data);
+
 	if (parseArimaArgs(ctx, argv, argc, &arima) != REDISMODULE_OK) {
 		return REDISMODULE_ERR;
 	}
 	printf("%d %d %d %d\n", arima.p, arima.q, arima.d, arima.N);
-	
+		
 	
 	return REDISMODULE_OK;
 }
