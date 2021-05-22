@@ -343,11 +343,10 @@ int TSDB_mrevrange(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 
 int TSDB_generic_range(RedisModuleCtx *ctx, RedisModuleString **argv, int argc, bool rev) {
     RedisModule_AutoMemory(ctx);
-
+	
     if (argc < 4) {
         return RedisModule_WrongArity(ctx);
     }
-
     Series *series;
     RedisModuleKey *key;
     const int status = GetSeries(ctx, argv[1], &key, &series, REDISMODULE_READ);
@@ -925,6 +924,33 @@ int TSDB_load(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     RedisModule_ReplySetArrayLength(ctx, replylen);
     return REDISMODULE_OK;
 }
+#include "series_iterator.h"
+int TSDB_print(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+ 	RedisModule_AutoMemory(ctx);
+    if (argc < 2) {
+        return RedisModule_WrongArity(ctx);
+    }
+	Series *series;
+	RedisModuleKey *key;
+	const int status = GetSeries(ctx, argv[1], &key, &series, REDISMODULE_READ);
+	if(!status) {
+		return REDISMODULE_ERR;
+	}	
+	SeriesIterator iterator;
+	Sample sample;
+	if (SeriesQuery(series, &iterator, 0, series->lastTimestamp, 0, NULL, series->lastTimestamp) != TSDB_OK) {
+        return RedisModule_ReplyWithArray(ctx, 0);
+    }
+	RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+	int arraylen = 0;
+	while (SeriesIteratorGetNext(&iterator, &sample) == CR_OK) {
+        ReplyWithSample(ctx, sample.timestamp, sample.value);
+        arraylen++;
+    }
+	SeriesIteratorClose(&iterator);
+	RedisModule_ReplySetArrayLength(ctx, arraylen);
+	return REDISMODULE_OK;
+}
 
 int TSDB_train(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 	RedisModule_AutoMemory(ctx);
@@ -1101,6 +1127,9 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
 	if(RedisModule_CreateCommand(ctx, "ts.train", TSDB_train, "write deny-oom", 1, -1, 3) == REDISMODULE_ERR)
 		return REDISMODULE_ERR;
 	
+	if(RedisModule_CreateCommand(ctx, "ts.print", TSDB_print, "write deny-oom", 1, -1, 3) == REDISMODULE_ERR)  
+	 	return REDISMODULE_ERR;
+
     if (RedisModule_CreateCommand(ctx, "ts.madd", TSDB_madd, "write deny-oom", 1, -1, 3) ==
         REDISMODULE_ERR)
         return REDISMODULE_ERR;

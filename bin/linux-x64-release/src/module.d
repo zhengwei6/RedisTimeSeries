@@ -5,4 +5,5 @@
  ../deps/RedisModulesSDK/redismodule.h config.h parse_policies.h \
  fast_double_parser_c/fast_double_parser_c.h gears_commands.h \
  query_language.h ../deps/RedisModulesSDK/rmutil/alloc.h \
- gears_integration.h rdb.h reply.h resultset.h version.h
+ gears_integration.h rdb.h reply.h resultset.h version.h \
+ series_iterator.h
