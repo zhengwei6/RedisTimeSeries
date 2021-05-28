@@ -330,7 +330,7 @@ int TSDB_mrange(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     if (IsGearsLoaded()) {
         return TSDB_mrange_RG(ctx, argv, argc, false);
     }
-
+    
     return TSDB_generic_mrange(ctx, argv, argc, false);
 }
 
@@ -895,6 +895,29 @@ int TSDB_mget(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     return REDISMODULE_OK;
 }
 
+int TSDB_help(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+	char *msg = "TS.train\nTS.predict\nTS.plot\nTS.downsampling\nTS.load\nTS.analysisi\n";
+	RedisModule_ReplyWithSimpleString(ctx, msg);
+	return REDISMODULE_OK;
+}
+
+int TSDB_predict(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+	
+	return REDISMODULE_OK;
+}
+
+int TSDB_plot(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+	return REDISMODULE_OK;
+}
+
+int TSDB_downsampling(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+	return REDISMODULE_OK;
+}
+
+int TSDB_analysis(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+	return REDISMODULE_OK;
+}
+
 int TSDB_load(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     RedisModule_AutoMemory(ctx);
     if(argc < 3) {
@@ -924,6 +947,7 @@ int TSDB_load(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     RedisModule_ReplySetArrayLength(ctx, replylen);
     return REDISMODULE_OK;
 }
+
 #include "series_iterator.h"
 int TSDB_print(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
  	RedisModule_AutoMemory(ctx);
@@ -984,6 +1008,7 @@ int TSDB_train(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
         sprintf(c_shmid, "%d", shmid);
         execl("./arimatest", c_pid, c_shmid, NULL);
     }
+    
     shmaddr = shmat(shmid, NULL, 0);
     if(shmaddr == (void *)-1) {
         perror("shmat fail\n");
@@ -1036,6 +1061,8 @@ void module_loaded(RedisModuleCtx *ctx, RedisModuleEvent eid, uint64_t subevent,
     }
 }
 
+/*
+module loading function, possible arguments:
 /*
 module loading function, possible arguments:
 COMPACTION_POLICY - compaction policy from parse_policies,h
@@ -1119,8 +1146,6 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
         return REDISMODULE_ERR;
 
     RMUtil_RegisterReadCmd(ctx, "ts.info", TSDB_info);
-    RMUtil_RegisterReadCmd(ctx, "ts.get", TSDB_get);
-
     if(RedisModule_CreateCommand(ctx, "ts.load", TSDB_load, "write deny-oom", 1, -1, 3) == REDISMODULE_ERR)
         return REDISMODULE_ERR;
    	
@@ -1129,6 +1154,21 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
 	
 	if(RedisModule_CreateCommand(ctx, "ts.print", TSDB_print, "write deny-oom", 1, -1, 3) == REDISMODULE_ERR)  
 	 	return REDISMODULE_ERR;
+	
+	if(RedisModule_CreateCommand(ctx, "ts.help", TSDB_help, "write deny-oom", 1, -1, 3) == REDISMODULE_ERR)
+        return REDISMODULE_ERR;
+	
+	if(RedisModule_CreateCommand(ctx, "ts.predict", TSDB_predict, "write deny-oom", 1, -1, 3) == REDISMODULE_ERR)
+        return REDISMODULE_ERR;
+	
+	if(RedisModule_CreateCommand(ctx, "ts.plot", TSDB_plot, "write deny-oom", 1, -1, 3) == REDISMODULE_ERR)
+        return REDISMODULE_ERR;
+
+	if(RedisModule_CreateCommand(ctx, "ts.downsampling", TSDB_downsampling, "write deny-oom", 1, -1, 3) == REDISMODULE_ERR)
+        return REDISMODULE_ERR;
+
+	if(RedisModule_CreateCommand(ctx, "ts.analysis", TSDB_analysis, "write deny-oom", 1, -1, 3) == REDISMODULE_ERR)
+        return REDISMODULE_ERR;
 
     if (RedisModule_CreateCommand(ctx, "ts.madd", TSDB_madd, "write deny-oom", 1, -1, 3) ==
         REDISMODULE_ERR)

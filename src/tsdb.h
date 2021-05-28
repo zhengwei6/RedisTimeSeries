@@ -29,6 +29,9 @@ typedef struct CreateArima
 	int q;
 	int d;
 	int N;
+    int method;
+    int opt;
+    char *weightfile;
 	size_t labelsCount;
 	Label *labels;
 } CreateArima;

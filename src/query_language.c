@@ -74,21 +74,36 @@ int parseArimaArgs(RedisModuleCtx *ctx, RedisModuleString **argv, int argc, Crea
 		RTS_ReplyGeneralError(ctx, "TSDB: Couldn't parse P");
 		return REDISMODULE_ERR;
 	}
+
 	if (RMUtil_ArgIndex("Q", argv, argc) > 0 &&
           RMUtil_ParseArgsAfter("Q", argv, argc, "l", &arima->q) != REDISMODULE_OK) {
           RTS_ReplyGeneralError(ctx, "TSDB: Couldn't parse Q");
         return REDISMODULE_ERR;
 	}
+
 	if (RMUtil_ArgIndex("D", argv, argc) > 0 &&
           RMUtil_ParseArgsAfter("D", argv, argc, "l", &arima->d) != REDISMODULE_OK) {
           RTS_ReplyGeneralError(ctx, "TSDB: Couldn't parse D");
        return REDISMODULE_ERR;
  	}
+     
 	if (RMUtil_ArgIndex("N", argv, argc) > 0 &&
          RMUtil_ParseArgsAfter("N", argv, argc, "l", &arima->N) != REDISMODULE_OK) {
          RTS_ReplyGeneralError(ctx, "TSDB: Couldn't parse N");
          return REDISMODULE_ERR;
     }
+
+    if (RMUtil_ArgIndex("METHOD", argv, argc) > 0 &&
+         RMUtil_ParseArgsAfter("METHOD", argv, argc, "l", &arima->method) != REDISMODULE_OK) {
+         RTS_ReplyGeneralError(ctx, "TSDB: Couldn't parse METHOD");
+         return REDISMODULE_ERR;
+    }
+    if (RMUtil_ArgIndex("OPT", argv, argc) > 0 &&
+         RMUtil_ParseArgsAfter("OPT", argv, argc, "l", &arima->opt) != REDISMODULE_OK) {
+         RTS_ReplyGeneralError(ctx, "TSDB: Couldn't parse OPT");
+         return REDISMODULE_ERR;
+    }
+    
 	return REDISMODULE_OK;
 }
 
