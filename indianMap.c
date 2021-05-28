@@ -3,8 +3,7 @@ int main()
 {
     int a, b, c;
  
-    for (b = c = 10; a = "Greetings from Techie Delight!!\
-    TFy!QJu ROo TNn(ROo)SLq SLq ULo+UHs UJq TNn*RPn/QPbEWS_JSWQAIJO^\
+    for (b = c = 10; a = "TFy!QJu ROo TNn(ROo)SLq SLq ULo+UHs UJq TNn*RPn/QPbEWS_JSWQAIJO^\
     NBELPeHBFHT}TnALVlBLOFAkHFOuFETpHCStHAUFAgcEAelclcn^r^r\\tZvYxXy\
     T|S~Pn SPm SOn TNn ULo0ULo#ULo-WHq!WFs XDt!"[b++ + 21];)
  
