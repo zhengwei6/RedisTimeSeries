@@ -943,6 +943,7 @@ int TSDB_load(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
         RedisModuleString *valueStr = RedisModule_CreateString(ctx, value_buffer, strlen(value_buffer));
         add(ctx, keyName, timestampStr, valueStr, NULL, -1);
     }
+    fclose(fp);
     RedisModule_ReplicateVerbatim(ctx);
     RedisModule_ReplySetArrayLength(ctx, replylen);
     return REDISMODULE_OK;
@@ -981,55 +982,45 @@ int TSDB_train(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 	if (argc < 2) {
         return RedisModule_WrongArity(ctx);
     }
-	RedisModuleString *keyName = argv[1];
-	CreateArima arima = {0};
-	// call parser
-    int pid, ppid;
-    void *shmaddr = NULL;
-    int shmid;
-    key_t key = (key_t) 666;
-    shmid = shmget(key, 4096, 0644 | IPC_CREAT);
-    if(shmid == -1) {
-        perror("shmget failed\n");
-        exit(EXIT_FAILURE);
-    }
-
-    ppid = getpid();
-    char c_pid[10];
-    char c_shmid[10];
-	    printf("ppid: %d\n", ppid);
-    if ((pid = fork()) < 0) {
-        perror("fork");
-        exit(1);
-    }
-    if (pid == 0) { /* child */
-        //exec
-        sprintf(c_pid, "%d", ppid);
-        sprintf(c_shmid, "%d", shmid);
-        execl("./arimatest", c_pid, c_shmid, NULL);
-    }
-    
-    shmaddr = shmat(shmid, NULL, 0);
-    if(shmaddr == (void *)-1) {
-        perror("shmat fail\n");
-        exit(EXIT_FAILURE);
-    }
-    int data;
-    int pr;
-    pr=wait(NULL);
-    // memory copy
-    memcpy(&data, shmaddr, sizeof(data));
-    if (shmdt(shmaddr) == -1) {
-        perror("shmdt failed\n");
-        exit(EXIT_FAILURE);
-    }
-    printf("parent get data: %d\n", data);
-
-	if (parseArimaArgs(ctx, argv, argc, &arima) != REDISMODULE_OK) {
+    CreateArima arima = {0};
+    // parse 
+    if (parseArimaArgs(ctx, argv, argc, &arima) != REDISMODULE_OK) {
 		return REDISMODULE_ERR;
 	}
 	printf("%d %d %d %d\n", arima.p, arima.q, arima.d, arima.N);
-		
+    Series *series;
+    RedisModuleKey *key;
+    const int status = GetSeries(ctx, argv[1], &key, &series, REDISMODULE_READ);
+    if(!status) {
+		return REDISMODULE_ERR;
+	}
+    SeriesIterator iterator;
+	Sample sample;
+	if (SeriesQuery(series, &iterator, 0, series->lastTimestamp, 0, NULL, series->lastTimestamp) != TSDB_OK) {
+        return RedisModule_ReplyWithArray(ctx, 0);
+    }
+    //fopen 
+    FILE *fp;
+    fp = fopen("python_read.txt", "w");
+    if(fp == NULL) {
+        return RTS_ReplyGeneralError(ctx, "TSDB: can't open file for writing.");
+    }
+	fprintf(fp, "%d\n", arima.p);
+    fprintf(fp, "%d\n", arima.q);
+    fprintf(fp, "%d\n", arima.d);
+    fprintf(fp, "%d\n", arima.N);
+    while (SeriesIteratorGetNext(&iterator, &sample) == CR_OK) {
+        fprintf(fp, "%f\n", sample.value);
+    }
+    fclose(fp);
+    system("python3 arimatest.py");
+    fp = fopen("python_read.txt", "r");
+    if(fp == NULL) {
+        return RTS_ReplyGeneralError(ctx, "TSDB: can't open file for reading.");
+    }
+    char mse_err[30];
+    fscanf(fp, "%s", mse_err);
+    RedisModule_ReplyWithSimpleString(ctx, mse_err);
 	
 	return REDISMODULE_OK;
 }
@@ -1146,6 +1137,7 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
         return REDISMODULE_ERR;
 
     RMUtil_RegisterReadCmd(ctx, "ts.info", TSDB_info);
+
     if(RedisModule_CreateCommand(ctx, "ts.load", TSDB_load, "write deny-oom", 1, -1, 3) == REDISMODULE_ERR)
         return REDISMODULE_ERR;
    	
