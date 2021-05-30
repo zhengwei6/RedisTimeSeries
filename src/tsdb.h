@@ -25,8 +25,10 @@ typedef struct CompactionRule
 
 typedef struct CreateArima
 {
-	int p;
-	int q;
+	int p_start;
+    int p_end;
+	int q_start;
+    int q_end;
 	int d;
 	int N;
     int method;

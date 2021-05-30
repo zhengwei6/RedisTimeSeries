@@ -69,14 +69,15 @@ int ParseDuplicatePolicy(RedisModuleCtx *ctx,
 }
 
 int parseArimaArgs(RedisModuleCtx *ctx, RedisModuleString **argv, int argc, CreateArima *arima) {
-	if (RMUtil_ArgIndex("P", argv, argc) > 0 &&
-		RMUtil_ParseArgsAfter("P", argv, argc, "l", &arima->p) != REDISMODULE_OK) {
+	
+    if (RMUtil_ArgIndex("P", argv, argc) > 0 &&
+		RMUtil_ParseArgsAfter("P", argv, argc, "ll", &arima->p_start, &arima->p_end) != REDISMODULE_OK) {
 		RTS_ReplyGeneralError(ctx, "TSDB: Couldn't parse P");
 		return REDISMODULE_ERR;
 	}
 
 	if (RMUtil_ArgIndex("Q", argv, argc) > 0 &&
-          RMUtil_ParseArgsAfter("Q", argv, argc, "l", &arima->q) != REDISMODULE_OK) {
+          RMUtil_ParseArgsAfter("Q", argv, argc, "ll", &arima->q_start, &arima->q_end) != REDISMODULE_OK) {
           RTS_ReplyGeneralError(ctx, "TSDB: Couldn't parse Q");
         return REDISMODULE_ERR;
 	}
