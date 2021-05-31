@@ -1000,6 +1000,7 @@ int TSDB_train(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
         return RedisModule_ReplyWithArray(ctx, 0);
     }
     //fopen 
+    //RedisModule_ReplyWithArray(ctx, 2);
     FILE *fp;
     fp = fopen("python_read.txt", "w");
     if(fp == NULL) {
@@ -1018,6 +1019,7 @@ int TSDB_train(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
         fprintf(fp, "%f\n", sample.value);
     }
     fclose(fp);
+    //RedisModule_ReplyWithSimpleString(ctx, "Training...\n");
     system("python3 arima.py > python_result.txt");
     fp = fopen("python_result.txt", "r");
     if(fp == NULL) {
