@@ -987,7 +987,7 @@ int TSDB_train(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     if (parseArimaArgs(ctx, argv, argc, &arima) != REDISMODULE_OK) {
 		return REDISMODULE_ERR;
 	}
-	printf("%d %d %d %d\n", arima.p_start, arima.q_start, arima.d, arima.N);
+
     Series *series;
     RedisModuleKey *key;
     const int status = GetSeries(ctx, argv[1], &key, &series, REDISMODULE_READ);
@@ -1005,17 +1005,20 @@ int TSDB_train(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     if(fp == NULL) {
         return RTS_ReplyGeneralError(ctx, "TSDB: can't open file for writing.");
     }
-	fprintf(fp, "%d\n", arima.p_start);
+	
+    fprintf(fp, "%d\n", arima.p_start);
     fprintf(fp, "%d\n", arima.p_end);
     fprintf(fp, "%d\n", arima.q_start);
     fprintf(fp, "%d\n", arima.q_end);
     fprintf(fp, "%d\n", arima.d);
-    fprintf(fp, "%d\n", arima.N);
+    fprintf(fp, "%d\n", arima.seasonal);
+    fprintf(fp, "./arima.pkl\n");
+
     while (SeriesIteratorGetNext(&iterator, &sample) == CR_OK) {
         fprintf(fp, "%f\n", sample.value);
     }
     fclose(fp);
-    system("python3 arimatest.py > python_result.txt");
+    system("python3 arima.py > python_result.txt");
     fp = fopen("python_result.txt", "r");
     if(fp == NULL) {
         return RTS_ReplyGeneralError(ctx, "TSDB: can't open file for reading.");
@@ -1024,7 +1027,7 @@ int TSDB_train(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     fseek(fp, 0L, SEEK_END);
     long numbytes = ftell(fp);
     fseek(fp, 0L, SEEK_SET);
-    fread(result, sizeof(char), numbytes, fp);
+    fread(result, sizeof(char), numbytes - 1, fp);
     fclose(fp);
     RedisModule_ReplyWithSimpleString(ctx, result);
 	

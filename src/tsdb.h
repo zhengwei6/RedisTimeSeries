@@ -31,11 +31,8 @@ typedef struct CreateArima
     int q_end;
 	int d;
 	int N;
-    int method;
-    int opt;
-    char *weightfile;
-	size_t labelsCount;
-	Label *labels;
+    int seasonal;
+    // char *file;
 } CreateArima;
 
 typedef struct CreateCtx
