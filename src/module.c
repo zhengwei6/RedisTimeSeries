@@ -37,6 +37,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <unistd.h>
+#include <math.h>
 
 #ifndef REDISTIMESERIES_GIT_SHA
 #define REDISTIMESERIES_GIT_SHA "unknown"
@@ -417,6 +419,41 @@ static void handleCompaction(RedisModuleCtx *ctx,
     rule->aggClass->appendValue(rule->aggContext, value);
 }
 
+static int internalAdd_TSDB_downsampling(RedisModuleCtx *ctx,
+                       Series *series,
+                       api_timestamp_t timestamp,
+                       double value,
+                       DuplicatePolicy dp_override) {
+    timestamp_t lastTS = series->lastTimestamp;
+    uint64_t retention = series->retentionTime;
+    // ensure inside retention period.
+    if (retention && timestamp < lastTS && retention < lastTS - timestamp) {
+        RTS_ReplyGeneralError(ctx, "TSDB: Timestamp is older than retention");
+        return REDISMODULE_ERR;
+    }
+
+    if (timestamp <= series->lastTimestamp && series->totalSamples != 0) {
+        if (SeriesUpsertSample(series, timestamp, value, dp_override) != REDISMODULE_OK) {
+            RTS_ReplyGeneralError(ctx,
+                                  "TSDB: Error at upsert, update is not supported in BLOCK mode");
+            return REDISMODULE_ERR;
+        }
+    } else {
+        if (SeriesAddSample(series, timestamp, value) != REDISMODULE_OK) {
+            RTS_ReplyGeneralError(ctx, "TSDB: Error at add");
+            return REDISMODULE_ERR;
+        }
+        // handle compaction rules
+        CompactionRule *rule = series->rules;
+        while (rule != NULL) {
+            handleCompaction(ctx, series, rule, timestamp, value);
+            rule = rule->nextRule;
+        }
+    }
+    //RedisModule_ReplyWithLongLong(ctx, timestamp);
+    return REDISMODULE_OK;
+}
+
 static int internalAdd(RedisModuleCtx *ctx,
                        Series *series,
                        api_timestamp_t timestamp,
@@ -501,6 +538,59 @@ static inline int add(RedisModuleCtx *ctx,
         }
     }
     int rv = internalAdd(ctx, series, timestamp, value, dp);
+    RedisModule_CloseKey(key);
+    return rv;
+}
+
+static inline int add_TSDB_downsampling(RedisModuleCtx *ctx,
+                      RedisModuleString *keyName,
+                      RedisModuleString *timestampStr,
+                      RedisModuleString *valueStr,
+                      RedisModuleString **argv,
+                      int argc) {
+    RedisModuleKey *key = RedisModule_OpenKey(ctx, keyName, REDISMODULE_READ | REDISMODULE_WRITE);
+    double value;
+    const char *valueCStr = RedisModule_StringPtrLen(valueStr, NULL);
+    if ((fast_double_parser_c_parse_number(valueCStr, &value) == NULL))
+        return RTS_ReplyGeneralError(ctx, "TSDB: invalid value");
+
+    long long timestampValue;
+    if ((RedisModule_StringToLongLong(timestampStr, &timestampValue) != REDISMODULE_OK)) {
+        // if timestamp is "*", take current time (automatic timestamp)
+        if (RMUtil_StringEqualsC(timestampStr, "*"))
+            timestampValue = RedisModule_Milliseconds();
+        else
+            return RTS_ReplyGeneralError(ctx, "TSDB: invalid timestamp");
+    }
+
+    if (timestampValue < 0) {
+        return RTS_ReplyGeneralError(ctx, "TSDB: invalid timestamp, must be positive number");
+    }
+    api_timestamp_t timestamp = (u_int64_t)timestampValue;
+
+    Series *series = NULL;
+    DuplicatePolicy dp = DP_NONE;
+
+    if (argv != NULL && RedisModule_KeyType(key) == REDISMODULE_KEYTYPE_EMPTY) {
+        // the key doesn't exist, lets check we have enough information to create one
+        CreateCtx cCtx = { 0 };
+        if (parseCreateArgs(ctx, argv, argc, &cCtx) != REDISMODULE_OK) {
+            return REDISMODULE_ERR;
+        }
+
+        CreateTsKey(ctx, keyName, &cCtx, &series, &key);
+        SeriesCreateRulesFromGlobalConfig(ctx, keyName, series, cCtx.labels, cCtx.labelsCount);
+    } else if (RedisModule_ModuleTypeGetType(key) != SeriesType) {
+        return RTS_ReplyGeneralError(ctx, "TSDB: the key is not a TSDB key");
+    } else {
+        series = RedisModule_ModuleTypeGetValue(key);
+        //  overwride key and database configuration for DUPLICATE_POLICY
+        if (argv != NULL &&
+            ParseDuplicatePolicy(ctx, argv, argc, TS_ADD_DUPLICATE_POLICY_ARG, &dp) != TSDB_OK) {
+            return REDISMODULE_ERR;
+        }
+    }
+    int rv = internalAdd_TSDB_downsampling(ctx, series, timestamp, value, dp);
     RedisModule_CloseKey(key);
     return rv;
 }
@@ -906,11 +996,265 @@ int TSDB_predict(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 	return REDISMODULE_OK;
 }
 
+#include "series_iterator.h"
+
 int TSDB_plot(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    RedisModule_AutoMemory(ctx);
+    char plot_filename[100000];
+    char tmp_filename[100000];
+    char redisString[100000];
+    char function[100000];
+    // What is len used for ?
+    size_t len;
+    int ReplyLen = 0;
+    char command[1000000];
+    // Segmentation Fault
+    // double array[500000];
+    double array[250000];
+	int arraylen = 0;
+    // TS.PLOT key function [JPG jpg]
+    // function : data, acf, pacf, diff_acf, diff_pacf, smooth, downsampling
+    if (argc < 3 || argc == 4 || argc > 5) {
+        return RedisModule_WrongArity(ctx);
+    } else if (argc == 3) {
+        snprintf(plot_filename, sizeof(plot_filename), "%s_%s.jpg", RedisModule_StringPtrLen(argv[1], len), RedisModule_StringPtrLen(argv[2], len));
+        int i=1;
+        while (access(plot_filename, F_OK) == 0) {
+            printf("FILE EXISTS!\n");
+            // file exists
+            snprintf(plot_filename, sizeof(plot_filename), "%s_%s%d.jpg", RedisModule_StringPtrLen(argv[1], len), RedisModule_StringPtrLen(argv[2], len), i);
+            i++;
+        }
+    } else if (argc == 5) {
+        char *JPG = RedisModule_StringPtrLen(argv[3], len);
+        if (strcmp(JPG, "JPG") != 0) {
+            return RedisModule_ReplyWithError(ctx, "ERR Invalid syntax! usage: TS.PLOT key function [JPG jpg]");
+        }
+        snprintf(plot_filename, sizeof(plot_filename), "%s.jpg", RedisModule_StringPtrLen(argv[4], len));
+    }
+
+    snprintf(tmp_filename, sizeof(tmp_filename), ".%s.tmp", RedisModule_StringPtrLen(argv[1], len));
+    snprintf(command, sizeof(command), "rm -rf %s", tmp_filename);
+    system(command);
+
+    Series *series;
+	RedisModuleKey *key;
+	const int status = GetSeries(ctx, argv[1], &key, &series, REDISMODULE_READ);
+	if(!status) {
+		return REDISMODULE_ERR;
+	}	
+	SeriesIterator iterator;
+	Sample sample;
+	if (SeriesQuery(series, &iterator, 0, series->lastTimestamp, 0, NULL, series->lastTimestamp) != TSDB_OK) {
+        return RedisModule_ReplyWithArray(ctx, 0);
+    }
+	while (SeriesIteratorGetNext(&iterator, &sample) == CR_OK) {
+        //ReplyWithSample(ctx, sample.timestamp, sample.value);
+        array[arraylen] = sample.value;
+        if (array[arraylen] != array[arraylen]) { // NaN
+            array[arraylen] = array[arraylen-1];
+        }
+        arraylen++;
+    }
+    FILE *fp = fopen(tmp_filename, "w");
+    if(fp == NULL){
+        printf("File open error!\n");
+    }
+    for(int i=0; i<arraylen; i++){
+        fprintf(fp, "%lf\n", array[i]);
+    }
+    fclose(fp);
+	SeriesIteratorClose(&iterator);
+
+    // function : data, acf, pacf, diff_acf, diff_pacf, smooth, downsampling
+    strcpy(function, RedisModule_StringPtrLen(argv[2], len));
+    if (!strcmp(function, "data")) {
+        snprintf(command, sizeof(command), "python3 TS.PLOT_data.py %s %s", tmp_filename, plot_filename);
+        system(command);
+    } else if (!strcmp(function, "acf")) {
+        snprintf(command, sizeof(command), "python3 TS.PLOT_acf.py %s %s", tmp_filename, plot_filename);
+        system(command);
+    } else if (!strcmp(function, "pacf")) {
+        if (arraylen < 100) {
+            return RedisModule_ReplyWithError(ctx, "ERR Too few samples! You need at least 100 samples to plot pacf");
+        }
+        snprintf(command, sizeof(command), "python3 TS.PLOT_pacf.py %s %s", tmp_filename, plot_filename);
+        system(command);
+    } else if (!strcmp(function, "smooth")) {
+        if (arraylen < 25) {
+            return RedisModule_ReplyWithError(ctx, "ERR Too few samples! You need at least 25 samples to plot smooth");
+        }
+        snprintf(command, sizeof(command), "python3 TS.PLOT_smooth.py %s %s", tmp_filename, plot_filename);
+        system(command);
+    } else if (!strcmp(function, "downsampling")) {
+        if (arraylen < 50) {
+            return RedisModule_ReplyWithError(ctx, "ERR Too few samples! You need at least 50 samples to plot downsampling");
+        }
+        snprintf(command, sizeof(command), "python3 TS.PLOT_downsampling.py %s %s", tmp_filename, plot_filename);
+        system(command);
+    } else if (!strcmp(function, "diff_acf")) {
+        if (arraylen < 3) {
+            return RedisModule_ReplyWithError(ctx, "ERR Too few samples! You need at least 3 samples to plot diff_acf");
+        }
+        snprintf(command, sizeof(command), "python3 TS.PLOT_diff_acf.py %s %s", tmp_filename, plot_filename);
+        system(command);
+    } else if (!strcmp(function, "diff_pacf")) {
+        if (arraylen < 40) {
+            return RedisModule_ReplyWithError(ctx, "ERR Too few samples! You need at least 40 samples to plot diff_pacf");
+        }
+        snprintf(command, sizeof(command), "python3 TS.PLOT_diff_pacf.py %s %s", tmp_filename, plot_filename);
+        system(command);
+    } else {
+        return RedisModule_ReplyWithError(ctx, "ERR Invalid function! Available functions : data, acf, pacf, diff_acf, diff_pacf, smooth, downsampling");
+    }
+
+    ////////////////////////////////
+    // ANSI COLOR CODES           //
+    ////////////////////////////////
+    // Black: \x1B[30m          //
+    // Red: \x1B[31m            //
+    // Green: \x1B[32m          //
+    // Yellow: \x1B[33m         //
+    // Blue: \x1B[34m           //
+    // Magenta: \x1B[35m        //
+    // Cyan: \x1B[36m           //
+    // White: \x1B[37m          //
+    // Reset: \x1B[0m           //
+    ////////////////////////////////
+
+    char printed_tmp_filename[1000000];
+    char printed_plot_filename[1000000];
+    
+    //snprintf(printed_tmp_filename, sizeof(printed_tmp_filename), "\x1B[33m%s\x1B[0m", tmp_filename);
+    
+    //snprintf(printed_plot_filename, sizeof(printed_plot_filename), "\x1B[31m%s\x1B[0m", plot_filename);
+	RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+    
+    //ReplyLen = ReplyLen + 3;
+    ReplyLen++;
+    //RedisModule_ReplyWithSimpleString(ctx, "\x1B[34mHello World\x1B[0m");
+    //RedisModule_ReplyWithSimpleString(ctx, printed_tmp_filename);
+    //RedisModule_ReplyWithSimpleString(ctx, printed_plot_filename);
+    char tmpReplyString[1000000];
+    snprintf(tmpReplyString, sizeof(tmpReplyString), "\x1B[33m%s\x1B[0m line chart has created (\x1B[31m%s\x1B[0m)", RedisModule_StringPtrLen(argv[2], len), realpath(plot_filename, NULL));
+
+    RedisModule_ReplyWithSimpleString(ctx, tmpReplyString);
+
+	RedisModule_ReplySetArrayLength(ctx, ReplyLen);
+
+    snprintf(command, sizeof(command), "rm -rf .%s.tmp", RedisModule_StringPtrLen(argv[1], len));
+    system(command);
+
 	return REDISMODULE_OK;
 }
 
 int TSDB_downsampling(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+
+    RedisModule_AutoMemory(ctx);
+    int interval = 0;
+    size_t len;
+    char key_Name[1000000];
+    char newkey[1000000];
+    //double array[250000];
+	//int arraylen = 0;
+    Sample sampleArray[100000];
+    int sampleLen = 0;
+    int ReplyLen = 0;
+    if (argc != 2 && argc != 4 && argc != 6) {
+        return RedisModule_WrongArity(ctx);
+    } else if (argc == 2) {
+        strcpy(key_Name, RedisModule_StringPtrLen(argv[1], len));
+        interval = 5;
+        snprintf(newkey, sizeof(newkey), "%s_downsampling_%d", key_Name, interval);
+    } else if (argc == 4) {
+        if (!strcmp(RedisModule_StringPtrLen(argv[2], len), "INTERVAL")) {
+            // NOT HANDLE THE CASE WHERE interval IS NOT AN INTEGER
+            interval = atoi(RedisModule_StringPtrLen(argv[3], len));
+            strcpy(key_Name, RedisModule_StringPtrLen(argv[1], len));
+            snprintf(newkey, sizeof(newkey), "%s_downsampling_%d", key_Name, interval);
+        } else if (!strcmp(RedisModule_StringPtrLen(argv[2], len), "NEWKEY")) {
+            interval = 5;
+            snprintf(newkey, sizeof(newkey), "%s", RedisModule_StringPtrLen(argv[3], len));
+        } else {
+            return RedisModule_ReplyWithError(ctx, "ERR Invalid syntax! usage: TS.DOWNSAMPLING key [INTERVAL interval] [NEWKEY newkey]");
+        }
+    } else if (argc == 6) {
+        if ( ! ( (!strcmp(RedisModule_StringPtrLen(argv[2], len), "INTERVAL") && !strcmp(RedisModule_StringPtrLen(argv[4], len), "NEWKEY")) || (!strcmp(RedisModule_StringPtrLen(argv[4], len), "INTERVAL") && !strcmp(RedisModule_StringPtrLen(argv[2], len), "NEWKEY")) ) ) {
+            return RedisModule_ReplyWithError(ctx, "ERR Invalid syntax! usage: TS.DOWNSAMPLING key [INTERVAL interval] [NEWKEY newkey]");
+        }
+        if (!strcmp(RedisModule_StringPtrLen(argv[2], len), "INTERVAL") && !strcmp(RedisModule_StringPtrLen(argv[4], len), "NEWKEY")) {
+            // NOT HANDLE THE CASE WHERE interval IS NOT AN INTEGER
+            interval = atoi(RedisModule_StringPtrLen(argv[3], len));
+            snprintf(newkey, sizeof(newkey), "%s", RedisModule_StringPtrLen(argv[5], len));
+        } else if (!strcmp(RedisModule_StringPtrLen(argv[2], len), "NEWKEY") && !strcmp(RedisModule_StringPtrLen(argv[4], len), "INTERVAL")) {
+            // NOT HANDLE THE CASE WHERE interval IS NOT AN INTEGER
+            snprintf(newkey, sizeof(newkey), "%s", RedisModule_StringPtrLen(argv[3], len));
+            interval = atoi(RedisModule_StringPtrLen(argv[5], len));
+        }
+    }
+
+    Series *series;
+	RedisModuleKey *key;
+	const int status = GetSeries(ctx, argv[1], &key, &series, REDISMODULE_READ);
+	if(!status) {
+		return REDISMODULE_ERR;
+	}	
+	SeriesIterator iterator;
+	Sample sample;
+	if (SeriesQuery(series, &iterator, 0, series->lastTimestamp, 0, NULL, series->lastTimestamp) != TSDB_OK) {
+        return RedisModule_ReplyWithArray(ctx, 0);
+    }
+    sampleLen = 0;
+	while (SeriesIteratorGetNext(&iterator, &sample) == CR_OK) {
+        //ReplyWithSample(ctx, sample.timestamp, sample.value);
+        sampleArray[sampleLen].timestamp = sample.timestamp;
+        sampleArray[sampleLen].value = sample.value;
+        sampleLen++;
+    }
+	SeriesIteratorClose(&iterator);
+
+    
+    // Series *series;
+    RedisModuleString *keyName = RedisModule_CreateString(ctx, newkey, strlen(newkey));
+    CreateCtx cCtx = { 0 };
+
+    key = RedisModule_OpenKey(ctx, keyName, REDISMODULE_READ | REDISMODULE_WRITE);
+
+    if (RedisModule_KeyType(key) != REDISMODULE_KEYTYPE_EMPTY) {
+        RedisModule_CloseKey(key);
+        return RTS_ReplyGeneralError(ctx, "TSDB: key already exists");
+    }
+
+    CreateTsKey(ctx, keyName, &cCtx, &series, &key);
+    RedisModule_CloseKey(key);
+
+    RedisModule_Log(ctx, "verbose", "created new series");
+    // RedisModule_ReplyWithSimpleString(ctx, "OK");
+    // RedisModule_ReplicateVerbatim(ctx);
+
+    RedisModuleString* valueStr;
+    RedisModuleString* timestampStr;
+    // RedisModuleString** tmpArgv = (RedisModuleString **)malloc(2 * (RedisModuleString *));
+    RedisModuleString* tmpArgv[2];
+    RedisModuleString* tmpArgv0 = RedisModule_CreateString(ctx, "TS.ADD", strlen("TS.ADD"));
+    RedisModuleString* tmpArgv1 = RedisModule_CreateString(ctx, newkey, strlen(newkey));
+    tmpArgv[0] = tmpArgv0;
+    tmpArgv[1] = tmpArgv1;
+
+    for (int i=0; i<sampleLen; i=i+interval) {
+        timestampStr = RedisModule_CreateStringFromLongLong(ctx, (long long)sampleArray[i].timestamp);
+        valueStr = RedisModule_CreateStringFromDouble(ctx, sampleArray[i].value);
+        add_TSDB_downsampling(ctx, keyName, timestampStr, valueStr, tmpArgv, 2);
+    }
+
+    ReplyLen++;
+    char tmpReplyString[1000000];
+    snprintf(tmpReplyString, sizeof(tmpReplyString), "new key \"\x1B[31m%s\x1B[0m\" created", newkey);
+	RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+    RedisModule_ReplyWithSimpleString(ctx, tmpReplyString);
+	RedisModule_ReplySetArrayLength(ctx, ReplyLen);
+
+
 	return REDISMODULE_OK;
 }
 
@@ -949,7 +1293,6 @@ int TSDB_load(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     return REDISMODULE_OK;
 }
 
-#include "series_iterator.h"
 int TSDB_print(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
  	RedisModule_AutoMemory(ctx);
     if (argc < 2) {
@@ -1036,6 +1379,253 @@ int TSDB_train(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 	return REDISMODULE_OK;
 }
 
+int TSDB_pacf(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    RedisModule_AutoMemory(ctx);
+    char keyName[1000000];
+    double array[100000];
+    char tmp_filename[1000000];
+    int arraylen = 0;
+    size_t len;
+    if (argc < 3){
+        return RedisModule_WrongArity(ctx);
+    }
+    int order_of_difference = atoi(RedisModule_StringPtrLen(argv[2], len));
+    if (order_of_difference > 2){
+        return RedisModule_ReplyWithError(ctx, "ERR Order of difference cannot be larger than 2");
+    }
+    strcpy(keyName, RedisModule_StringPtrLen(argv[1], len));
+    
+    Series *series;
+	RedisModuleKey *key;
+	const int status = GetSeries(ctx, argv[1], &key, &series, REDISMODULE_READ);
+	if(!status) {
+		return REDISMODULE_ERR;
+	}	
+	SeriesIterator iterator;
+	Sample sample;
+	if (SeriesQuery(series, &iterator, 0, series->lastTimestamp, 0, NULL, series->lastTimestamp) != TSDB_OK) {
+        return RedisModule_ReplyWithArray(ctx, 0);
+    }
+    arraylen = 0;
+	while (SeriesIteratorGetNext(&iterator, &sample) == CR_OK) {
+        //ReplyWithSample(ctx, sample.timestamp, sample.value);
+        array[arraylen] = sample.value;
+        if (array[arraylen] != array[arraylen]) { // NaN
+            array[arraylen] = array[arraylen-1];
+        }
+        arraylen++;
+    }
+	SeriesIteratorClose(&iterator);
+
+    snprintf(tmp_filename, sizeof(tmp_filename), ".%s.tmp", RedisModule_StringPtrLen(argv[1], len));
+    FILE *fp = fopen(tmp_filename, "w");
+    if(fp == NULL){
+        printf("File open error!\n");
+    }
+    for(int i=0; i<arraylen; i++){
+        fprintf(fp, "%lf\n", array[i]);
+    }
+    fclose(fp);
+
+    char command[100000];
+    snprintf(command, sizeof(command), "python3 TS.PACF.py %s %d", tmp_filename, order_of_difference);
+    system(command);
+
+    double pacf[100000];
+    int pacfLen = 0;
+
+    fp = fopen(tmp_filename, "r");
+    while(fscanf(fp, "%lf", &pacf[pacfLen]) != EOF) {
+        if(pacf[pacfLen] != pacf[pacfLen]){     // There are some fucking NaNs in the datafile
+            pacf[pacfLen] = pacf[pacfLen-1];    // impute with the previous value
+        }
+        pacfLen++;
+    }
+
+    for(int i=0; i<=pacfLen; i++){
+        printf("pacf(t = %d) = %lf\n", i, pacf[i]);
+    }
+    int plot_pacf_length = pacfLen;
+    char plot_pacf_arr[21][plot_pacf_length];
+    for (int i=0; i<11; i++)
+        for (int j=0; j<plot_pacf_length; j++)
+            plot_pacf_arr[i][j] = (pacf[j] >= (10-i)*0.1) ? '*' : ' ';
+
+
+    for (int i=11; i<21; i++)
+        for (int j=0; j<plot_pacf_length; j++)
+            plot_pacf_arr[i][j] = (pacf[j] <= (10-i)*0.1) ? '*' : ' ';
+    for(int i=0; i<plot_pacf_length; i++)
+        plot_pacf_arr[10][i] = '*';
+    
+    for (int i=0; i<21; i++) {
+        for (int j=0; j<plot_pacf_length; j++) {
+            printf("%c", plot_pacf_arr[i][j]);
+        }
+        printf("\n");
+    }
+    ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    int ReplyLen = 21;
+    char tmpReplyString[100000];
+    RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+    for (int i=0; i<21; i++){
+        //memset(tmpReplyString, 0, sizeof(tmpReplyString));
+        snprintf(tmpReplyString, sizeof(tmpReplyString), "%+3.2f  ", (double)(10.0-i)*0.1);
+        if (i==10) {
+            snprintf(tmpReplyString, sizeof(tmpReplyString), " %3.2f  ", 0.0);
+        }
+        for (int j=0; j<plot_pacf_length; j++){
+            if (pacf[j] > 0.1 || pacf[j] < -0.1){
+                strcat(tmpReplyString, "\x1B[31m");
+                if (plot_pacf_arr[i][j] == '*') {
+                    strcat(tmpReplyString, "*");
+                } else {
+                    strcat(tmpReplyString, " ");
+                }
+                strcat(tmpReplyString, "\x1B[0m");
+            } else {
+                strcat(tmpReplyString, "\x1B[33m");
+                if (plot_pacf_arr[i][j] == '*') {
+                    strcat(tmpReplyString, "*");
+                } else {
+                    strcat(tmpReplyString, " ");
+                }
+                strcat(tmpReplyString, "\x1B[0m");
+            }
+        }
+        printf("tmpReplyString: %s\n", tmpReplyString);
+        RedisModule_ReplyWithSimpleString(ctx, tmpReplyString);
+    }
+
+	RedisModule_ReplySetArrayLength(ctx, ReplyLen);    
+
+    return REDISMODULE_OK;
+}
+
+int TSDB_acf(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    RedisModule_AutoMemory(ctx);
+    char keyName[1000000];
+    double array[100000];
+    char tmp_filename[1000000];
+    int arraylen = 0;
+    size_t len;
+    if (argc < 3){
+        return RedisModule_WrongArity(ctx);
+    }
+    int order_of_difference = atoi(RedisModule_StringPtrLen(argv[2], len));
+    if (order_of_difference > 2){
+        return RedisModule_ReplyWithError(ctx, "ERR Order of difference cannot be larger than 2");
+    }
+    strcpy(keyName, RedisModule_StringPtrLen(argv[1], len));
+    
+    Series *series;
+	RedisModuleKey *key;
+	const int status = GetSeries(ctx, argv[1], &key, &series, REDISMODULE_READ);
+	if(!status) {
+		return REDISMODULE_ERR;
+	}	
+	SeriesIterator iterator;
+	Sample sample;
+	if (SeriesQuery(series, &iterator, 0, series->lastTimestamp, 0, NULL, series->lastTimestamp) != TSDB_OK) {
+        return RedisModule_ReplyWithArray(ctx, 0);
+    }
+    arraylen = 0;
+	while (SeriesIteratorGetNext(&iterator, &sample) == CR_OK) {
+        //ReplyWithSample(ctx, sample.timestamp, sample.value);
+        array[arraylen] = sample.value;
+        if (array[arraylen] != array[arraylen]) { // NaN
+            array[arraylen] = array[arraylen-1];
+        }
+        arraylen++;
+    }
+	SeriesIteratorClose(&iterator);
+
+    snprintf(tmp_filename, sizeof(tmp_filename), ".%s.tmp", RedisModule_StringPtrLen(argv[1], len));
+    FILE *fp = fopen(tmp_filename, "w");
+    if(fp == NULL){
+        printf("File open error!\n");
+    }
+    for(int i=0; i<arraylen; i++){
+        fprintf(fp, "%lf\n", array[i]);
+    }
+    fclose(fp);
+
+    char command[100000];
+    snprintf(command, sizeof(command), "python3 TS.ACF.py %s %d", tmp_filename, order_of_difference);
+    system(command);
+
+    double acf[100000];
+    int acfLen = 0;
+
+    fp = fopen(tmp_filename, "r");
+    while(fscanf(fp, "%lf", &acf[acfLen]) != EOF) {
+        if(acf[acfLen] != acf[acfLen]){     // There are some fucking NaNs in the datafile
+            acf[acfLen] = acf[acfLen-1];    // impute with the previous value
+        }
+        acfLen++;
+    }
+
+    for(int i=0; i<=acfLen; i++){
+        printf("acf(t = %d) = %lf\n", i, acf[i]);
+    }
+    int plot_acf_length = acfLen;
+    char plot_acf_arr[21][plot_acf_length];
+    for (int i=0; i<11; i++)
+        for (int j=0; j<plot_acf_length; j++)
+            plot_acf_arr[i][j] = (acf[j] >= (10-i)*0.1) ? '*' : ' ';
+
+
+    for (int i=11; i<21; i++)
+        for (int j=0; j<plot_acf_length; j++)
+            plot_acf_arr[i][j] = (acf[j] <= (10-i)*0.1) ? '*' : ' ';
+    for(int i=0; i<plot_acf_length; i++)
+        plot_acf_arr[10][i] = '*';
+    
+    for (int i=0; i<21; i++) {
+        for (int j=0; j<plot_acf_length; j++) {
+            printf("%c", plot_acf_arr[i][j]);
+        }
+        printf("\n");
+    }
+    ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    int ReplyLen = 21;
+    char tmpReplyString[100000];
+    RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+    for (int i=0; i<21; i++){
+        //memset(tmpReplyString, 0, sizeof(tmpReplyString));
+        snprintf(tmpReplyString, sizeof(tmpReplyString), "%+3.2f  ", (double)(10.0-i)*0.1);
+        if (i==10) {
+            snprintf(tmpReplyString, sizeof(tmpReplyString), " %3.2f  ", 0.0);
+        }
+        for (int j=0; j<plot_acf_length; j++){
+            if (acf[j] > 0.1 || acf[j] < -0.1){
+                strcat(tmpReplyString, "\x1B[31m");
+                if (plot_acf_arr[i][j] == '*') {
+                    strcat(tmpReplyString, "*");
+                } else {
+                    strcat(tmpReplyString, " ");
+                }
+                strcat(tmpReplyString, "\x1B[0m");
+            } else {
+                strcat(tmpReplyString, "\x1B[33m");
+                if (plot_acf_arr[i][j] == '*') {
+                    strcat(tmpReplyString, "*");
+                } else {
+                    strcat(tmpReplyString, " ");
+                }
+                strcat(tmpReplyString, "\x1B[0m");
+            }
+        }
+        printf("tmpReplyString: %s\n", tmpReplyString);
+        RedisModule_ReplyWithSimpleString(ctx, tmpReplyString);
+    }
+
+	RedisModule_ReplySetArrayLength(ctx, ReplyLen);    
+
+    return REDISMODULE_OK;
+}
 
 int NotifyCallback(RedisModuleCtx *original_ctx,
                    int type,
@@ -1150,6 +1740,12 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
     RMUtil_RegisterReadCmd(ctx, "ts.info", TSDB_info);
 
     if(RedisModule_CreateCommand(ctx, "ts.load", TSDB_load, "write deny-oom", 1, -1, 3) == REDISMODULE_ERR)
+        return REDISMODULE_ERR;
+    
+    if(RedisModule_CreateCommand(ctx, "ts.pacf", TSDB_pacf, "write deny-oom", 1, -1, 3) == REDISMODULE_ERR)
+        return REDISMODULE_ERR;
+    
+    if(RedisModule_CreateCommand(ctx, "ts.acf", TSDB_acf, "write deny-oom", 1, -1, 3) == REDISMODULE_ERR)
         return REDISMODULE_ERR;
    	
 	if(RedisModule_CreateCommand(ctx, "ts.train", TSDB_train, "write deny-oom", 1, -1, 3) == REDISMODULE_ERR)
