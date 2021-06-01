@@ -88,11 +88,19 @@ int parseArimaArgs(RedisModuleCtx *ctx, RedisModuleString **argv, int argc, Crea
        return REDISMODULE_ERR;
  	}
 
+    if (RMUtil_ArgIndex("N", argv, argc) > 0 &&
+          RMUtil_ParseArgsAfter("N", argv, argc, "l", &arima->N) != REDISMODULE_OK) {
+          RTS_ReplyGeneralError(ctx, "TSDB: Couldn't parse N");
+       return REDISMODULE_ERR;
+ 	}
+
     if (RMUtil_ArgIndex("SEASONAL", argv, argc) > 0 &&
           RMUtil_ParseArgsAfter("SEASONAL", argv, argc, "l", &arima->seasonal) != REDISMODULE_OK) {
           RTS_ReplyGeneralError(ctx, "TSDB: Couldn't parse SEASONAL");
        return REDISMODULE_ERR;
  	}
+    
+
 	return REDISMODULE_OK;
 }
 

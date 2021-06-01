@@ -32,7 +32,6 @@ typedef struct CreateArima
 	int d;
 	int N;
     int seasonal;
-    // char *file;
 } CreateArima;
 
 typedef struct CreateCtx

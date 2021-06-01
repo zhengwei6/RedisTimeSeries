@@ -1356,6 +1356,7 @@ int TSDB_train(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     fprintf(fp, "%d\n", arima.q_end);
     fprintf(fp, "%d\n", arima.d);
     fprintf(fp, "%d\n", arima.seasonal);
+    fprintf(fp, "%d\n", arima.N);
     fprintf(fp, "./arima.pkl\n");
 
     while (SeriesIteratorGetNext(&iterator, &sample) == CR_OK) {
