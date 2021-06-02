@@ -1259,6 +1259,153 @@ int TSDB_downsampling(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 }
 
 int TSDB_analysis(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    RedisModule_AutoMemory(ctx);
+
+    size_t len;
+    char *operation;
+    char ndiffs[] = "ndiffs\0";
+    char pacf[] = "pacf\0";
+    char acf[] = "acf\0";
+    operation = RedisModule_StringPtrLen(argv[2], len);
+    int opr = -1; // for error
+    int array_len = 0;
+
+    /***check argument numbers***/
+
+    if(argc < 3)
+        return RedisModule_WrongArity(ctx);
+
+    if(argc == 3) { 
+        if(strcmp(operation, ndiffs) != 0)
+            return RedisModule_WrongArity(ctx);
+    }
+    else if(argc == 4) { 
+        if(strcmp(operation, pacf) != 0 && strcmp(operation, acf) != 0)
+            return RedisModule_WrongArity(ctx);
+    }
+    
+
+
+    RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+
+    char *str_diff_val;
+    int diff_val = -1; //diff value for pacf/acf
+
+    /***check operation***/
+    if(strcmp(operation, ndiffs) == 0)
+    {
+        opr = 0; // 
+    }
+    else if (strcmp(operation, pacf) == 0)
+    {
+        opr = 1;
+        str_diff_val = RedisModule_StringPtrLen(argv[3], len);
+    }
+    else if (strcmp(operation, acf) == 0)
+    {
+        opr = 2;
+        str_diff_val = RedisModule_StringPtrLen(argv[3], len);
+    }
+    else
+    {
+        RedisModule_ReplyWithSimpleString(ctx, "wrong operation!");
+        array_len++;
+    }     
+
+    /***Get timeseries from db and write into file***/
+
+    Series *series;
+	RedisModuleKey *key;
+	const int status = GetSeries(ctx, argv[1], &key, &series, REDISMODULE_READ);
+	if(!status) {
+		return REDISMODULE_ERR;
+	}	
+
+    SeriesIterator iterator;
+	Sample sample;
+	if (SeriesQuery(series, &iterator, 0, series->lastTimestamp, 0, NULL, series->lastTimestamp) != TSDB_OK) {
+        return RedisModule_ReplyWithArray(ctx, 0);
+    }
+
+    FILE *fp;
+    fp = fopen("./ts_analysis/test2.txt", "w");
+    if(fp == NULL) {
+        return RTS_ReplyGeneralError(ctx, "TSDB: can't open file");
+    }
+	fprintf(fp, "value\n");
+	while (SeriesIteratorGetNext(&iterator, &sample) == CR_OK) {
+        fprintf(fp, "%f\n", sample.value);
+    }
+    
+	SeriesIteratorClose(&iterator);
+    fclose(fp);
+
+    /***run ndiffs from python***/
+    if(opr == 0){
+            char cmd[] = "python3 ./ts_analysis/ndiffs.py ./ts_analysis/test2.txt";
+            system(cmd);
+
+            fp = fopen("./ts_analysis/ndiffs.txt", "r");
+            if(fp == NULL) {
+                return RTS_ReplyGeneralError(ctx, "TSDB: can't open file");
+            }
+            char ndiffs_val[1];
+
+	        fscanf(fp, "%s", ndiffs_val);
+
+            char ndiffs_output[12] = "ndiffs =   \0";
+            ndiffs_output[strlen(ndiffs_output)-2] = ndiffs_val[0];
+    
+            RedisModule_ReplyWithSimpleString(ctx, ndiffs_output);
+
+            array_len++;
+    }
+    else if(opr == 1){
+        char *cmd1 = "python3 ./ts_analysis/pacf.py ./ts_analysis/test2.txt ";
+        
+        char *cmd2 = malloc(strlen(cmd1) + strlen(str_diff_val) + 1); 
+       
+        strcpy(cmd2, cmd1);
+        strcat(cmd2, str_diff_val);
+    
+        system(cmd2);
+
+        fp = fopen("./ts_analysis/pacf.txt", "r");
+        if(fp == NULL) {
+            return RTS_ReplyGeneralError(ctx, "TSDB: can't open file");
+        }
+        char pacf_val[25];
+    
+        while(fscanf(fp, "%s", pacf_val) != EOF) {
+            RedisModule_ReplyWithSimpleString(ctx, pacf_val);
+            array_len++;
+        }
+
+
+    }
+    else if(opr == 2){
+        char *cmd1 = "python3 ./ts_analysis/acf.py ./ts_analysis/test2.txt ";
+        
+        char *cmd2 = malloc(strlen(cmd1) + strlen(str_diff_val) + 1); 
+
+        strcpy(cmd2, cmd1);
+        strcat(cmd2, str_diff_val);
+    
+        system(cmd2);
+       
+        fp = fopen("./ts_analysis/acf.txt", "r");
+        if(fp == NULL) {
+            return RTS_ReplyGeneralError(ctx, "TSDB: can't open file");
+        }
+        char acf_val[25];
+        while(fscanf(fp, "%s", acf_val) != EOF) {
+            RedisModule_ReplyWithSimpleString(ctx, acf_val);
+            array_len++;
+        }
+    }
+
+    RedisModule_ReplySetArrayLength(ctx, array_len);
+	
 	return REDISMODULE_OK;
 }
 
