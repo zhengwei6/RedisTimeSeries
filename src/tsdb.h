@@ -32,6 +32,8 @@ typedef struct CreateArima
 	int d;
 	int N;
     int seasonal;
+    RedisModuleString *model_file;
+    RedisModuleString *result_file;
 } CreateArima;
 
 typedef struct CreateCtx

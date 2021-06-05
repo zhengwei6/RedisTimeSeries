@@ -100,6 +100,17 @@ int parseArimaArgs(RedisModuleCtx *ctx, RedisModuleString **argv, int argc, Crea
        return REDISMODULE_ERR;
  	}
     
+    if (RMUtil_ArgIndex("M", argv, argc) > 0 &&
+          RMUtil_ParseArgsAfter("M", argv, argc, "s", &arima->model_file) != REDISMODULE_OK) {
+          RTS_ReplyGeneralError(ctx, "TSDB: Couldn't parse MODELFILE");
+       return REDISMODULE_ERR;
+ 	}
+
+    if (RMUtil_ArgIndex("R", argv, argc) > 0 &&
+          RMUtil_ParseArgsAfter("R", argv, argc, "s", &arima->result_file) != REDISMODULE_OK) {
+          RTS_ReplyGeneralError(ctx, "TSDB: Couldn't parse RESULTFILE");
+       return REDISMODULE_ERR;
+ 	}    
 
 	return REDISMODULE_OK;
 }
