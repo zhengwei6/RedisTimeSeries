@@ -8,6 +8,9 @@
 [![Forum](https://img.shields.io/badge/Forum-RedisTimeSeries-blue)](https://forum.redislabs.com/c/modules/redistimeseries)
 [![Discord](https://img.shields.io/discord/697882427875393627?style=flat-square)](https://discord.gg/KExRgMb)
 
+# sudo make setup && make build && make env REDIS\_DIR=\"\<redis path\>\"
+
+
 RedisTimeSeries is a Redis Module adding a Time Series data structure to Redis.
 
 ## Features

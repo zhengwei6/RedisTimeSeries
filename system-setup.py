@@ -18,6 +18,7 @@ class RedisTimeSeriesSetup(paella.Setup):
     def common_first(self):
         self.pip_install("wheel")
         self.pip_install("setuptools --upgrade")
+		
 
         self.install("git jq curl")
 

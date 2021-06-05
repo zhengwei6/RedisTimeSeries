@@ -1,5 +1,6 @@
 ROOT=.
 MK.pyver:=3
+REDIS_PYTHON_DIR = $(REDIS_DIR)/ts_python/
 
 ifeq ($(wildcard $(ROOT)/deps/readies/mk),)
 $(error Submodules not present. Please run 'git submodule update --init --recursive')
@@ -23,6 +24,7 @@ setup:
 	@echo Setting up system...
 	@./deps/readies/bin/getpy3
 	@./system-setup.py
+	@./pip-setup.py
 
 fetch:
 	-@git submodule update --init --recursive
@@ -56,3 +58,12 @@ benchmark:
 
 # deploy:
 #	@make -C src deploy
+
+env:
+	@if [ -z $(REDIS_DIR) ]; then\
+		echo "usage: make env REDIS_DIR="<redis path>"";\
+		exit 1;\
+	fi
+	@mkdir -p $(REDIS_PYTHON_DIR);
+	@cp ./ts_python/* $(REDIS_PYTHON_DIR);
+	@cp ./bin/redistimeseries.so $(REDIS_DIR);
