@@ -44,5 +44,6 @@ with open(model_file, 'rb') as pkl:
 plt.subplots(dpi=600)
 plt.plot([i for i in range(input_t.size)], input_t, linewidth=0.2, color='blue')
 plt.plot([i for i in range(input_t.size, input_t.size + N)], pickle_preds, linewidth=0.2, color='red')
-print("predict result file: " + result_file + "\n")
 plt.savefig(result_file)
+print("predict result file: " + result_file + "\n", flush = True)
+print("-------------------------------------------\n")

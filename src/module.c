@@ -1508,18 +1508,18 @@ int TSDB_predict(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
         fprintf(fp, "%f\n", sample.value);
     }
     fclose(fp);
-    system("python3 arima_predict.py > python_result.txt");
-    fp = fopen("python_result.txt", "r");
+    system("python3 arima_predict.py > python_result_predict.txt");
+    fp = fopen("python_result_predict.txt", "r");
     if(fp == NULL) {
         return RTS_ReplyGeneralError(ctx, "TSDB: can't open file for reading.");
     }
-    char result[5000];
+    char resultt[500];
     fseek(fp, 0L, SEEK_END);
     long numbytes = ftell(fp);
     fseek(fp, 0L, SEEK_SET);
-    fread(result, sizeof(char), numbytes - 1, fp);
+    fread(resultt, sizeof(char), numbytes - 10, fp);
     fclose(fp);
-    RedisModule_ReplyWithSimpleString(ctx, result);
+    RedisModule_ReplyWithSimpleString(ctx, resultt);
 	return REDISMODULE_OK;
 }
 
@@ -1579,9 +1579,9 @@ int TSDB_train(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
         fprintf(fp, "%f\n", sample.value);
     }
     fclose(fp);
-    //RedisModule_ReplyWithSimpleString(ctx, "Training...\n");
-    system("python3 arima_train.py > python_result.txt");
-    fp = fopen("python_result.txt", "r");
+
+    system("python3 arima_train.py > python_result_train.txt");
+    fp = fopen("python_result_train.txt", "r");
     if(fp == NULL) {
         return RTS_ReplyGeneralError(ctx, "TSDB: can't open file for reading.");
     }
@@ -1589,7 +1589,7 @@ int TSDB_train(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     fseek(fp, 0L, SEEK_END);
     long numbytes = ftell(fp);
     fseek(fp, 0L, SEEK_SET);
-    fread(result, sizeof(char), numbytes - 1, fp);
+    fread(result, sizeof(char), numbytes - 10, fp);
     fclose(fp);
     RedisModule_ReplyWithSimpleString(ctx, result);
 	

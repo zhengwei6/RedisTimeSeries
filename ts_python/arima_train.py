@@ -85,4 +85,5 @@ plt.plot([i for i in range(train.size, train.size + test.size)], test, linewidth
 plt.plot([i for i in range(train.size, train.size + test.size)], future_forecast, linewidth=0.2, color='red')
 plt.plot([i for i in range(train.size)], train, linewidth=0.2, color='blue')
 plt.savefig(result_file)
+print("-------------------------------------------")
 
