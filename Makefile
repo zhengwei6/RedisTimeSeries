@@ -62,7 +62,7 @@ benchmark:
 
 env:
 	@if [ -z $(REDIS_DIR) ]; then\
-		echo "usage: make env REDIS_DIR=<redis path>";\
+		echo "usage: make env REDIS_DIR="<redis path>"";\
 		exit 1;\
 	fi
 	@mkdir -p $(REDIS_PYTHON_DIR);
