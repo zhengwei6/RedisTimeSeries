@@ -1516,6 +1516,7 @@ int TSDB_predict(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     fseek(fp, 0L, SEEK_SET);
     fread(resultt, sizeof(char), numbytes - 10, fp);
     fclose(fp);
+    result[numbytes - 10] = '\0';
     RedisModule_ReplyWithSimpleString(ctx, resultt);
 	return REDISMODULE_OK;
 }
@@ -1588,6 +1589,7 @@ int TSDB_train(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     fseek(fp, 0L, SEEK_SET);
     fread(result, sizeof(char), numbytes - 10, fp);
     fclose(fp);
+    result[numbytes - 10] = '\0';
     RedisModule_ReplyWithSimpleString(ctx, result);
 	
 	return REDISMODULE_OK;
