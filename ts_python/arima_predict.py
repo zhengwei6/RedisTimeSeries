@@ -39,7 +39,9 @@ input_t = input_t.astype(np.float)
 f.close()
 pickle_preds = []
 with open(model_file, 'rb') as pkl:
-    pickle_preds = pickle.load(pkl).predict(n_periods=N)
+    model = pickle.load(pkl)
+    model.fit(input_t)
+    pickle_preds = model.predict(n_periods=N)
 
 plt.subplots(dpi=600)
 plt.plot([i for i in range(input_t.size)], input_t, linewidth=0.2, color='blue')
