@@ -1064,40 +1064,40 @@ int TSDB_plot(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     // function : data, acf, pacf, diff_acf, diff_pacf, smooth, downsampling
     strcpy(function, RedisModule_StringPtrLen(argv[2], len));
     if (!strcmp(function, "data")) {
-        snprintf(command, sizeof(command), "python3 TS.PLOT_data.py %s %s", tmp_filename, plot_filename);
+        snprintf(command, sizeof(command), "python3 ./ts_python/TS.PLOT_data.py %s %s", tmp_filename, plot_filename);
         system(command);
     } else if (!strcmp(function, "acf")) {
-        snprintf(command, sizeof(command), "python3 TS.PLOT_acf.py %s %s", tmp_filename, plot_filename);
+        snprintf(command, sizeof(command), "python3 ./ts_python/TS.PLOT_acf.py %s %s", tmp_filename, plot_filename);
         system(command);
     } else if (!strcmp(function, "pacf")) {
         if (arraylen < 100) {
             return RedisModule_ReplyWithError(ctx, "ERR Too few samples! You need at least 100 samples to plot pacf");
         }
-        snprintf(command, sizeof(command), "python3 TS.PLOT_pacf.py %s %s", tmp_filename, plot_filename);
+        snprintf(command, sizeof(command), "python3 ./ts_python/TS.PLOT_pacf.py %s %s", tmp_filename, plot_filename);
         system(command);
     } else if (!strcmp(function, "smooth")) {
         if (arraylen < 25) {
             return RedisModule_ReplyWithError(ctx, "ERR Too few samples! You need at least 25 samples to plot smooth");
         }
-        snprintf(command, sizeof(command), "python3 TS.PLOT_smooth.py %s %s", tmp_filename, plot_filename);
+        snprintf(command, sizeof(command), "python3 ./ts_python/TS.PLOT_smooth.py %s %s", tmp_filename, plot_filename);
         system(command);
     } else if (!strcmp(function, "downsampling")) {
         if (arraylen < 50) {
             return RedisModule_ReplyWithError(ctx, "ERR Too few samples! You need at least 50 samples to plot downsampling");
         }
-        snprintf(command, sizeof(command), "python3 TS.PLOT_downsampling.py %s %s", tmp_filename, plot_filename);
+        snprintf(command, sizeof(command), "python3 ./ts_python/TS.PLOT_downsampling.py %s %s", tmp_filename, plot_filename);
         system(command);
     } else if (!strcmp(function, "diff_acf")) {
         if (arraylen < 3) {
             return RedisModule_ReplyWithError(ctx, "ERR Too few samples! You need at least 3 samples to plot diff_acf");
         }
-        snprintf(command, sizeof(command), "python3 TS.PLOT_diff_acf.py %s %s", tmp_filename, plot_filename);
+        snprintf(command, sizeof(command), "python3 ./ts_python/TS.PLOT_diff_acf.py %s %s", tmp_filename, plot_filename);
         system(command);
     } else if (!strcmp(function, "diff_pacf")) {
         if (arraylen < 40) {
             return RedisModule_ReplyWithError(ctx, "ERR Too few samples! You need at least 40 samples to plot diff_pacf");
         }
-        snprintf(command, sizeof(command), "python3 TS.PLOT_diff_pacf.py %s %s", tmp_filename, plot_filename);
+        snprintf(command, sizeof(command), "python3 ./ts_python/TS.PLOT_diff_pacf.py %s %s", tmp_filename, plot_filename);
         system(command);
     } else {
         return RedisModule_ReplyWithError(ctx, "ERR Invalid function! Available functions : data, acf, pacf, diff_acf, diff_pacf, smooth, downsampling");
@@ -1337,10 +1337,10 @@ int TSDB_analysis(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 
     /***run ndiffs from python***/
     if(opr == 0){
-            char cmd[] = "python3 ./ts_analysis/ndiffs.py ./ts_analysis/test2.txt";
+            char cmd[] = "python3 ./ts_python/ndiffs.py ./test2.txt";
             system(cmd);
 
-            fp = fopen("./ts_analysis/ndiffs.txt", "r");
+            fp = fopen("./ndiffs.txt", "r");
             if(fp == NULL) {
                 return RTS_ReplyGeneralError(ctx, "TSDB: can't open file");
             }
@@ -1356,7 +1356,7 @@ int TSDB_analysis(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
             array_len++;
     }
     else if(opr == 1){
-        char *cmd1 = "python3 ./ts_analysis/pacf.py ./ts_analysis/test2.txt ";
+        char *cmd1 = "python3 ./ts_python/pacf.py ./test2.txt ";
         
         char *cmd2 = malloc(strlen(cmd1) + strlen(str_diff_val) + 1); 
        
@@ -1365,7 +1365,7 @@ int TSDB_analysis(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     
         system(cmd2);
 
-        fp = fopen("./ts_analysis/pacf.txt", "r");
+        fp = fopen("./pacf.txt", "r");
         if(fp == NULL) {
             return RTS_ReplyGeneralError(ctx, "TSDB: can't open file");
         }
@@ -1379,7 +1379,7 @@ int TSDB_analysis(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 
     }
     else if(opr == 2){
-        char *cmd1 = "python3 ./ts_analysis/acf.py ./ts_analysis/test2.txt ";
+        char *cmd1 = "python3 ./ts_python/acf.py ./test2.txt ";
         
         char *cmd2 = malloc(strlen(cmd1) + strlen(str_diff_val) + 1); 
 
@@ -1388,7 +1388,7 @@ int TSDB_analysis(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     
         system(cmd2);
        
-        fp = fopen("./ts_analysis/acf.txt", "r");
+        fp = fopen("./acf.txt", "r");
         if(fp == NULL) {
             return RTS_ReplyGeneralError(ctx, "TSDB: can't open file");
         }
@@ -1508,7 +1508,7 @@ int TSDB_predict(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
         fprintf(fp, "%f\n", sample.value);
     }
     fclose(fp);
-    system("python3 arima_predict.py > python_result_predict.txt");
+    system("python3 ./ts_python/arima_predict.py > python_result_predict.txt");
     fp = fopen("python_result_predict.txt", "r");
     if(fp == NULL) {
         return RTS_ReplyGeneralError(ctx, "TSDB: can't open file for reading.");
@@ -1580,7 +1580,7 @@ int TSDB_train(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     }
     fclose(fp);
 
-    system("python3 arima_train.py > python_result_train.txt");
+    system("python3 ./ts_python/arima_train.py > python_result_train.txt");
     fp = fopen("python_result_train.txt", "r");
     if(fp == NULL) {
         return RTS_ReplyGeneralError(ctx, "TSDB: can't open file for reading.");
@@ -1645,7 +1645,7 @@ int TSDB_pacf(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     fclose(fp);
 
     char command[100000];
-    snprintf(command, sizeof(command), "python3 TS.PACF.py %s %d", tmp_filename, order_of_difference);
+    snprintf(command, sizeof(command), "python3 ./ts_python/TS.PACF.py %s %d", tmp_filename, order_of_difference);
     system(command);
 
     double pacf[100000];
@@ -1769,7 +1769,7 @@ int TSDB_acf(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     fclose(fp);
 
     char command[100000];
-    snprintf(command, sizeof(command), "python3 TS.ACF.py %s %d", tmp_filename, order_of_difference);
+    snprintf(command, sizeof(command), "python3 ./ts_python/TS.ACF.py %s %d", tmp_filename, order_of_difference);
     system(command);
 
     double acf[100000];
