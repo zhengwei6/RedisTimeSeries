@@ -1337,10 +1337,10 @@ int TSDB_analysis(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 
     /***run ndiffs from python***/
     if(opr == 0){
-            char cmd[] = "python3 ./ts_python/ndiffs.py ./test2.txt";
+            char cmd[] = "python3 ./ts_python/ndiffs.py ./ts_analysis/test2.txt";
             system(cmd);
 
-            fp = fopen("./ndiffs.txt", "r");
+            fp = fopen("./ts_analysis/ndiffs.txt", "r");
             if(fp == NULL) {
                 return RTS_ReplyGeneralError(ctx, "TSDB: can't open file");
             }
@@ -1356,7 +1356,7 @@ int TSDB_analysis(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
             array_len++;
     }
     else if(opr == 1){
-        char *cmd1 = "python3 ./ts_python/pacf.py ./test2.txt ";
+        char *cmd1 = "python3 ./ts_python/pacf.py ./ts_analysis/test2.txt ";
         
         char *cmd2 = malloc(strlen(cmd1) + strlen(str_diff_val) + 1); 
        
@@ -1365,7 +1365,7 @@ int TSDB_analysis(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     
         system(cmd2);
 
-        fp = fopen("./pacf.txt", "r");
+        fp = fopen("./ts_analysis/pacf.txt", "r");
         if(fp == NULL) {
             return RTS_ReplyGeneralError(ctx, "TSDB: can't open file");
         }
@@ -1379,7 +1379,7 @@ int TSDB_analysis(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 
     }
     else if(opr == 2){
-        char *cmd1 = "python3 ./ts_python/acf.py ./test2.txt ";
+        char *cmd1 = "python3 ./ts_python/acf.py ./ts_analysis/test2.txt ";
         
         char *cmd2 = malloc(strlen(cmd1) + strlen(str_diff_val) + 1); 
 
@@ -1388,7 +1388,7 @@ int TSDB_analysis(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     
         system(cmd2);
        
-        fp = fopen("./acf.txt", "r");
+        fp = fopen("./ts_analysis/acf.txt", "r");
         if(fp == NULL) {
             return RTS_ReplyGeneralError(ctx, "TSDB: can't open file");
         }

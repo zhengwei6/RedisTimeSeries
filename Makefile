@@ -1,6 +1,7 @@
 ROOT=.
 MK.pyver:=3
 REDIS_PYTHON_DIR = $(REDIS_DIR)/ts_python/
+REDIS_ANALYSIS_DIR = $(REDIS_DIR)/ts_analysis/
 
 ifeq ($(wildcard $(ROOT)/deps/readies/mk),)
 $(error Submodules not present. Please run 'git submodule update --init --recursive')
@@ -65,5 +66,6 @@ env:
 		exit 1;\
 	fi
 	@mkdir -p $(REDIS_PYTHON_DIR);
+	@mkdir -p $(REDIS_ANALYSIS_DIR);
 	@cp ./ts_python/* $(REDIS_PYTHON_DIR);
 	@cp ./bin/redistimeseries.so $(REDIS_DIR);
