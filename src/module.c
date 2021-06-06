@@ -1510,7 +1510,7 @@ int TSDB_predict(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     if(fp == NULL) {
         return RTS_ReplyGeneralError(ctx, "TSDB: can't open file for reading.");
     }
-    char resultt[500];
+    char resultt[10000];
     fseek(fp, 0L, SEEK_END);
     long numbytes = ftell(fp);
     fseek(fp, 0L, SEEK_SET);
