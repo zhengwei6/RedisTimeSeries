@@ -1254,29 +1254,32 @@ int TSDB_downsampling(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 }
 
 int TSDB_analysis(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
-    RedisModule_AutoMemory(ctx);	
-	
+    RedisModule_AutoMemory(ctx);
+
     size_t len;
     char *operation;
     char ndiffs[] = "ndiffs\0";
     char pacf[] = "pacf\0";
     char acf[] = "acf\0";
-    //operation = RedisModule_StringPtrLen(argv[2], len);
+    operation = RedisModule_StringPtrLen(argv[2], len);
     int opr = -1; // for error
     int array_len = 0;
 
+    /***check argument numbers***/
 
-	/***check argument numbers***/
-
-    if (argc < 3)
+    if(argc < 3)
         return RedisModule_WrongArity(ctx);
-	if (argc == 3) { 
-        if(strcmp(RedisModule_StringPtrLen(argv[2], len), "ndiffs") != 0)
-            return RedisModule_WrongArity(ctx);
-    } else if (argc == 4) {
-        if(strcmp(RedisModule_StringPtrLen(argv[2], len), "pacf") != 0 && strcmp(RedisModule_StringPtrLen(argv[2], len), "acf") != 0)
+
+    if(argc == 3) { 
+        if(strcmp(operation, ndiffs) != 0)
             return RedisModule_WrongArity(ctx);
     }
+    else if(argc == 4) { 
+        if(strcmp(operation, pacf) != 0 && strcmp(operation, acf) != 0)
+            return RedisModule_WrongArity(ctx);
+    }
+    
+
 
     RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
 
