@@ -62,10 +62,12 @@ benchmark:
 
 env:
 	@if [ -z $(REDIS_DIR) ]; then\
-		echo "usage: make env REDIS_DIR="<redis path>"";\
+		echo "usage: make env REDIS_DIR=<redis path>";\
 		exit 1;\
 	fi
+	@echo Setting up environment...
 	@mkdir -p $(REDIS_PYTHON_DIR);
 	@mkdir -p $(REDIS_ANALYSIS_DIR);
 	@cp ./ts_python/* $(REDIS_PYTHON_DIR);
 	@cp ./bin/redistimeseries.so $(REDIS_DIR);
+	@echo done

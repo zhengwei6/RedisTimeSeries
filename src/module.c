@@ -986,8 +986,168 @@ int TSDB_mget(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 }
 
 int TSDB_help(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
-	char *msg = "TS.train\nTS.predict\nTS.plot\nTS.downsampling\nTS.load\nTS.analysisi\n";
-	RedisModule_ReplyWithSimpleString(ctx, msg);
+    RedisModule_AutoMemory(ctx);
+    int ReplyLen = 0;
+    int numberOfRows[20];
+    int rowOfLoad, rowOfPrint, rowOfAnalysis, rowOfTrain, rowOfPredict, rowOfPlot, rowOfAcf, rowOfPacf, rowOfDownsampling;
+
+    char words[20][100][200];
+
+    ////////////////////////////////
+    // ANSI COLOR CODES           //
+    ////////////////////////////////
+    // Black: \x1B[30m            //
+    // Red: \x1B[33m              //
+    // Green: \x1B[32m            //
+    // Yellow: \x1B[33m           //
+    // Blue: \x1B[34m             //
+    // Magenta: \x1B[35m          //
+    // Cyan: \x1B[36m             //
+    // White: \x1B[37m            //
+    // Reset: \x1B[0m             //
+    ////////////////////////////////
+
+	strcpy(words[0][0], "\x1B[31m------------------------------------------------------------------------------------------------------------------\x1B[0m");
+	strcpy(words[0][1], "\x1B[33mTS.LOAD key filename\x1B[0m");
+	strcpy(words[0][2], "    load samples from the file to the key (key must be created first)");
+	strcpy(words[0][3], "\x1B[33mArguments\x1B[0m");
+	strcpy(words[0][4], "    - \x1B[36mfilename\x1B[0m: file name");
+	strcpy(words[0][5], "\x1B[33mExample\x1B[0m");
+	strcpy(words[0][6], "    TS.LOAD foo ./bar.txt");
+	strcpy(words[0][7], "\x1B[33mNotes\x1B[0m");
+	strcpy(words[0][8], "    The format of file is:");
+	strcpy(words[0][9], "        <timestamp1> <value1>");
+	strcpy(words[0][10], "        <timestamp2> <value2>");
+	strcpy(words[0][11], "        <timestamp3> <value3>");
+	strcpy(words[0][12], "        ...");
+	strcpy(words[0][13], "\x1B[31m------------------------------------------------------------------------------------------------------------------\x1B[0m");
+    numberOfRows[0] = rowOfLoad = 14;
+
+	strcpy(words[1][0], "\x1B[33mTS.PRINT key\x1B[0m");
+	strcpy(words[1][1], "    print samples in the key");
+	strcpy(words[1][2], "\x1B[31m------------------------------------------------------------------------------------------------------------------\x1B[0m");
+    numberOfRows[1] = rowOfPrint = 3;
+
+    strcpy(words[2][0], "\x1B[33mTS.ANALYSIS key function [order_of_difference]\x1B[0m");
+    strcpy(words[2][1], "    analyze samples in the key");
+    strcpy(words[2][2], "\x1B[33mArguments\x1B[0m");
+    strcpy(words[2][3], "    - \x1B[36mfunction\x1B[0m: \x1B[35mndiffs\x1B[0m, \x1B[35mpacf\x1B[0m, \x1B[35macf\x1B[0m");
+    strcpy(words[2][4], "        - \x1B[35mndiffs\x1B[0m: calculate order of difference suits for the samples in a key");
+    strcpy(words[2][5], "        - \x1B[35mpacf\x1B[0m: calculate the partial autocorrelation function of the samples in a key");
+    strcpy(words[2][6], "        - \x1B[35macf\x1B[0m: calculate the autocorrelation function of the samples in a key");
+    strcpy(words[2][7], "\x1B[33mOptional arguments\x1B[0m (for pacf and acf this is a must)");
+    strcpy(words[2][8], "    - \x1B[36morder_of_difference:\x1B[0m 0, 1, 2");
+    strcpy(words[2][9], "\x1B[33mExample\x1B[0m");
+    strcpy(words[2][10], "    TS.ANALYSIS foo ndiffs");
+    strcpy(words[2][11], "    TS.ANALYSIS foo pacf 1");
+    strcpy(words[2][12], "    TS.ANALYSIS foo acf 0");
+    strcpy(words[2][13], "\x1B[31m------------------------------------------------------------------------------------------------------------------\x1B[0m");
+    numberOfRows[2] = rowOfAnalysis = 14;
+
+    strcpy(words[3][0], "\x1B[33mTS.TRAIN key P p_start p_end D d Q q_start q_end [SEASONAL seasonal] [N number_of_testing_samples] [M model_file] [R result_image]\x1B[0m");
+    strcpy(words[3][1], "    train an auto_arima model to predict the future value of samples in the key and save the model parameters in a file");
+    strcpy(words[3][2], "\x1B[33mArguments\x1B[0m");
+    strcpy(words[3][3], "    - \x1B[36mp_start\x1B[0m: start value of p for auto_arima model");
+    strcpy(words[3][4], "    - \x1B[36mp_end\x1B[0m: max value of p auto_arima model will test");
+    strcpy(words[3][5], "    - \x1B[36md\x1B[0m: order of difference");
+    strcpy(words[3][6], "    - \x1B[36mq_start\x1B[0m: start value of q for auto_arima model");
+    strcpy(words[3][7], "    - \x1B[36mq_end\x1B[0m: max value of q auto_arima model will test");
+    strcpy(words[3][8], "\x1B[33mOptional arguments\x1B[0m");
+    strcpy(words[3][9], "    - \x1B[36mseasonal\x1B[0m: \x1B[35m0\x1B[0m, \x1B[35m1\x1B[0m");
+    strcpy(words[3][10], "        - \x1B[35m0\x1B[0m: for non-seasonal data");
+    strcpy(words[3][11], "        - \x1B[35m1\x1B[0m: for seasonal data");
+    strcpy(words[3][12], "        - Default: 0");
+    strcpy(words[3][13], "    - \x1B[36mnumber_of_testing_samples\x1B[0m: number of testing samples");
+    strcpy(words[3][14], "        - Default: 0");
+    strcpy(words[3][15], "    - \x1B[36mmodel_file\x1B[0m: file name of the file containing parameters of the trained model");
+    strcpy(words[3][16], "        - Default: arima.pkl");
+    strcpy(words[3][17], "    - \x1B[36mresult_image\x1B[0m: line graph of comparison of ground truth (blue line) and predicted values (red line)");
+    strcpy(words[3][18], "        - Default: train_result.jpg");
+    strcpy(words[3][19], "\x1B[33mExample\x1B[0m");
+    strcpy(words[3][20], "    TS.TRAIN foo P 1 3 D 1 Q 1 3 SEASONAL 1 N 100 M arima_model.pkl R train_result.jpg");
+    strcpy(words[3][21], "    (suppose number of samples is 1000, train auto_arima model with training data of size 900 and testing data of size 100)");
+    strcpy(words[3][22], "\x1B[31m------------------------------------------------------------------------------------------------------------------\x1B[0m");
+    numberOfRows[3] = rowOfTrain = 23;
+
+    strcpy(words[4][0], "\x1B[33mTS.PREDICT key [N number_of_predicted_value] [M model_file] [R result_image]\x1B[0m");
+    strcpy(words[4][1], "    predict future values using the trained model");
+    strcpy(words[4][2], "\x1B[33mOptional arguments\x1B[0m");
+    strcpy(words[4][3], "    - \x1B[36mnumber_of_predicted_value\x1B[0m: number of future values to be predicted");
+    strcpy(words[4][4], "        - Default: 0");
+    strcpy(words[4][5], "    - \x1B[36mmodel_file\x1B[0m: file name of the file containing parameters of the trained model");
+    strcpy(words[4][6], "        - Default: ./arima.pkl");
+    strcpy(words[4][7], "    - \x1B[36mresult_image\x1B[0m: line graph of the predicted value");
+    strcpy(words[4][8], "        - Default: predict_result.jpg");
+    strcpy(words[4][9], "\x1B[33mExample\x1B[0m");
+    strcpy(words[4][10], "    TS.PREDICT foo N 100 M arima_model.pkl R predict_result.jpg");
+    strcpy(words[4][11], "    (predict the next 100 values)");
+    strcpy(words[4][12], "\x1B[31m------------------------------------------------------------------------------------------------------------------\x1B[0m");
+    numberOfRows[4] = rowOfPredict = 13;
+
+    strcpy(words[5][0], "\x1B[33mTS.PLOT key function [JPG jpg]\x1B[0m");
+    strcpy(words[5][1], "    plot the specific line graph of samples in the key");
+    strcpy(words[5][2], "\x1B[33mArguments\x1B[0m");
+    strcpy(words[5][3], "    - \x1B[36mfunction\x1B[0m: \x1B[35mdata\x1B[0m, \x1B[35macf\x1B[0m, \x1B[35mpacf\x1B[0m, \x1B[35mdiff_acf\x1B[0m, \x1B[35mdiff_pacf\x1B[0m, \x1B[35msmooth\x1B[0m, \x1B[35mdownsampling\x1B[0m");
+    strcpy(words[5][4], "        - \x1B[35mdata\x1B[0m: line graph of the origin data");
+    strcpy(words[5][5], "        - \x1B[35macf\x1B[0m: line graph of the autocorrelation function of data");
+    strcpy(words[5][6], "        - \x1B[35mpacf\x1B[0m: line graph of the partial autocorrelation function of data");
+    strcpy(words[5][7], "        - \x1B[35mdiff_acf\x1B[0m: line graph of the autocorrelation function of the differenced data");
+    strcpy(words[5][8], "        - \x1B[35mdiff_pacf\x1B[0m: line graph of the partial autocorrelation function of the differenced data");
+    strcpy(words[5][9], "        - \x1B[35msmooth\x1B[0m: line graph of the average mean of data with differnce size of window");
+    strcpy(words[5][10], "        - \x1B[35mdownsampling\x1B[0m: line graph of downsampling of data");
+    strcpy(words[5][11], "\x1B[33mOptional arguments\x1B[0m");
+    strcpy(words[5][12], "    - \x1B[36mjpg\x1B[0m: file name of line graph");
+    strcpy(words[5][13], "        - Default: <key>_<function>.jpg");
+    strcpy(words[5][14], "\x1B[33mExample\x1B[0m");
+    strcpy(words[5][15], "    TS.PLOT foo downsampling JPG foo.jpg");
+    strcpy(words[5][16], "\x1B[31m------------------------------------------------------------------------------------------------------------------\x1B[0m");
+    numberOfRows[5] = rowOfPlot = 17;
+
+    strcpy(words[6][0], "\x1B[33mTS.ACF key order_of_difference\x1B[0m");
+    strcpy(words[6][1], "    plot the autocorrelation function of data on terminal");
+    strcpy(words[6][2], "\x1B[33mArguments\x1B[0m");
+    strcpy(words[6][3], "    - \x1B[36morder_of_difference\x1B[0m: number of difference before calculating autocorrelation function");
+    strcpy(words[6][4], "\x1B[33mExample\x1B[0m");
+    strcpy(words[6][5], "    TS.ACF foo 1");
+    strcpy(words[6][6], "\x1B[31m------------------------------------------------------------------------------------------------------------------\x1B[0m");
+    numberOfRows[6] = rowOfAcf = 7;
+
+    strcpy(words[7][0], "TS.PACF key order_of_difference\x1B[0m");
+    strcpy(words[7][1], "    plot the partial autocorrelation function of data on terminal");
+    strcpy(words[7][2], "\x1B[33mArguments\x1B[0m");
+    strcpy(words[7][3], "    - \x1B[36morder_of_difference\x1B[0m: number of difference before calculating partial autocorrelation function");
+    strcpy(words[7][4], "\x1B[33mExample\x1B[0m");
+    strcpy(words[7][5], "    TS.PACF foo 0");
+    strcpy(words[7][6], "\x1B[31m------------------------------------------------------------------------------------------------------------------\x1B[0m");
+    numberOfRows[7] = rowOfPacf = 7;
+
+    strcpy(words[8][0], "\x1B[33mTS.DOWNSAMPLING key [INTERVAL interval] [NEWKEY newkey]\x1B[0m");
+    strcpy(words[8][1], "     downsampling samples in the key and save the result to a new key (the key cannot be created first)");
+    strcpy(words[8][2], "\x1B[33mArguments\x1B[0m");
+    strcpy(words[8][3], "    (none)");
+    strcpy(words[8][4], "\x1B[33mOptional arguments\x1B[0m");
+    strcpy(words[8][5], "    - \x1B[36minterval\x1B[0m: sampling rate");
+    strcpy(words[8][6], "        - Default: 5");
+    strcpy(words[8][7], "    - \x1B[36mnewkey\x1B[0m: name of the new key");
+    strcpy(words[8][8], "        - Default: <key>_downsampling_<interval>");
+    strcpy(words[8][9], "\x1B[33mExample\x1B[0m");
+    strcpy(words[8][10], "    TS.DOWNSAMPLING foo INTERVAL 10 NEWKEY bar");
+    strcpy(words[8][11], "    (downsample samples in foo with sampling rate of 10 and save the result in new key bar)");
+    strcpy(words[8][12], "\x1B[31m------------------------------------------------------------------------------------------------------------------\x1B[0m");
+    numberOfRows[8] = rowOfDownsampling = 13;
+    
+    ReplyLen = 0;
+    for (int i=0; i<9; i++) {
+        ReplyLen = ReplyLen + numberOfRows[i];
+    }
+    RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+    for (int i=0; i<9; i++) {
+        for (int j=0; j<numberOfRows[i]; j++) {
+            RedisModule_ReplyWithSimpleString(ctx, words[i][j]);
+        }
+    }
+	RedisModule_ReplySetArrayLength(ctx, ReplyLen);
+	
 	return REDISMODULE_OK;
 }
 
@@ -1106,15 +1266,15 @@ int TSDB_plot(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     ////////////////////////////////
     // ANSI COLOR CODES           //
     ////////////////////////////////
-    // Black: \x1B[30m          //
-    // Red: \x1B[31m            //
-    // Green: \x1B[32m          //
-    // Yellow: \x1B[33m         //
-    // Blue: \x1B[34m           //
-    // Magenta: \x1B[35m        //
-    // Cyan: \x1B[36m           //
-    // White: \x1B[37m          //
-    // Reset: \x1B[0m           //
+    // Black: \x1B[30m            //
+    // Red: \x1B[33m              //
+    // Green: \x1B[32m            //
+    // Yellow: \x1B[33m           //
+    // Blue: \x1B[34m             //
+    // Magenta: \x1B[35m          //
+    // Cyan: \x1B[36m             //
+    // White: \x1B[37m            //
+    // Reset: \x1B[0m             //
     ////////////////////////////////
 
     char printed_tmp_filename[1000000];
@@ -1122,7 +1282,7 @@ int TSDB_plot(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     
     //snprintf(printed_tmp_filename, sizeof(printed_tmp_filename), "\x1B[33m%s\x1B[0m", tmp_filename);
     
-    //snprintf(printed_plot_filename, sizeof(printed_plot_filename), "\x1B[31m%s\x1B[0m", plot_filename);
+    //snprintf(printed_plot_filename, sizeof(printed_plot_filename), "\x1B[33m%s\x1B[0m", plot_filename);
 	RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
     
     //ReplyLen = ReplyLen + 3;
@@ -1131,7 +1291,7 @@ int TSDB_plot(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     //RedisModule_ReplyWithSimpleString(ctx, printed_tmp_filename);
     //RedisModule_ReplyWithSimpleString(ctx, printed_plot_filename);
     char tmpReplyString[1000000];
-    snprintf(tmpReplyString, sizeof(tmpReplyString), "\x1B[33m%s\x1B[0m line chart has created (\x1B[31m%s\x1B[0m)", RedisModule_StringPtrLen(argv[2], len), realpath(plot_filename, NULL));
+    snprintf(tmpReplyString, sizeof(tmpReplyString), "\x1B[33m%s\x1B[0m line chart has created (\x1B[33m%s\x1B[0m)", RedisModule_StringPtrLen(argv[2], len), realpath(plot_filename, NULL));
 
     RedisModule_ReplyWithSimpleString(ctx, tmpReplyString);
 
@@ -1244,7 +1404,7 @@ int TSDB_downsampling(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 
     //ReplyLen++;
     char tmpReplyString[1000000];
-    snprintf(tmpReplyString, sizeof(tmpReplyString), "new key \"\x1B[31m%s\x1B[0m\" created", newkey);
+    snprintf(tmpReplyString, sizeof(tmpReplyString), "new key \"\x1B[33m%s\x1B[0m\" created", newkey);
 	//RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
     RedisModule_ReplyWithSimpleString(ctx, tmpReplyString);
 	//RedisModule_ReplySetArrayLength(ctx, ReplyLen);
@@ -1725,7 +1885,7 @@ int TSDB_pacf(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
         }
         for (int j=0; j<plot_pacf_length; j++){
             if (pacf[j] > 0.1 || pacf[j] < -0.1){
-                strcat(tmpReplyString, "\x1B[31m");
+                strcat(tmpReplyString, "\x1B[33m");
                 if (plot_pacf_arr[i][j] == '*') {
                     strcat(tmpReplyString, "*");
                 } else {
@@ -1849,7 +2009,7 @@ int TSDB_acf(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
         }
         for (int j=0; j<plot_acf_length; j++){
             if (acf[j] > 0.1 || acf[j] < -0.1){
-                strcat(tmpReplyString, "\x1B[31m");
+                strcat(tmpReplyString, "\x1B[33m");
                 if (plot_acf_arr[i][j] == '*') {
                     strcat(tmpReplyString, "*");
                 } else {
