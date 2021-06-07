@@ -419,7 +419,7 @@ static void handleCompaction(RedisModuleCtx *ctx,
     rule->aggClass->appendValue(rule->aggContext, value);
 }
 
-static int internalAdd_TSDB_downsampling(RedisModuleCtx *ctx,
+static int internalAdd_without_reply(RedisModuleCtx *ctx,
                        Series *series,
                        api_timestamp_t timestamp,
                        double value,
@@ -542,7 +542,7 @@ static inline int add(RedisModuleCtx *ctx,
     return rv;
 }
 
-static inline int add_TSDB_downsampling(RedisModuleCtx *ctx,
+static inline int add_without_reply(RedisModuleCtx *ctx,
                       RedisModuleString *keyName,
                       RedisModuleString *timestampStr,
                       RedisModuleString *valueStr,
@@ -590,7 +590,7 @@ static inline int add_TSDB_downsampling(RedisModuleCtx *ctx,
             return REDISMODULE_ERR;
         }
     }
-    int rv = internalAdd_TSDB_downsampling(ctx, series, timestamp, value, dp);
+    int rv = internalAdd_without_reply(ctx, series, timestamp, value, dp);
     RedisModule_CloseKey(key);
     return rv;
 }
@@ -1239,15 +1239,15 @@ int TSDB_downsampling(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     for (int i=0; i<sampleLen; i=i+interval) {
         timestampStr = RedisModule_CreateStringFromLongLong(ctx, (long long)sampleArray[i].timestamp);
         valueStr = RedisModule_CreateStringFromDouble(ctx, sampleArray[i].value);
-        add_TSDB_downsampling(ctx, keyName, timestampStr, valueStr, tmpArgv, 2);
+        add_without_reply(ctx, keyName, timestampStr, valueStr, tmpArgv, 2);
     }
 
-    ReplyLen++;
+    //ReplyLen++;
     char tmpReplyString[1000000];
     snprintf(tmpReplyString, sizeof(tmpReplyString), "new key \"\x1B[31m%s\x1B[0m\" created", newkey);
-	RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+	//RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
     RedisModule_ReplyWithSimpleString(ctx, tmpReplyString);
-	RedisModule_ReplySetArrayLength(ctx, ReplyLen);
+	//RedisModule_ReplySetArrayLength(ctx, ReplyLen);
 
 
 	return REDISMODULE_OK;
@@ -1421,17 +1421,19 @@ int TSDB_load(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     }
     char time_buffer[30], value_buffer[30];
     RedisModuleString *keyName = argv[1];
-    RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+    //RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
     long long replylen = 0;
     while(fscanf(fp, "%s %s", time_buffer, value_buffer) != EOF) {
         replylen += 1;
         RedisModuleString *timestampStr = RedisModule_CreateString(ctx, time_buffer, strlen(time_buffer));
         RedisModuleString *valueStr = RedisModule_CreateString(ctx, value_buffer, strlen(value_buffer));
-        add(ctx, keyName, timestampStr, valueStr, NULL, -1);
+        add_without_reply(ctx, keyName, timestampStr, valueStr, NULL, -1);
     }
     fclose(fp);
-    RedisModule_ReplicateVerbatim(ctx);
-    RedisModule_ReplySetArrayLength(ctx, replylen);
+    //RedisModule_ReplicateVerbatim(ctx);
+    //RedisModule_ReplySetArrayLength(ctx, replylen);
+    RedisModule_ReplyWithSimpleString(ctx, "OK");
+    //RedisModule_ReplicateVerbatim(ctx);
     return REDISMODULE_OK;
 }
 
@@ -1504,8 +1506,10 @@ int TSDB_predict(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     fprintf(fp, "%d\n", arima.N);
     fprintf(fp, "%s\n", model_file);
     fprintf(fp, "%s\n", result_file);
+    int lastTimeStamp = 0;
     while (SeriesIteratorGetNext(&iterator, &sample) == CR_OK) {
         fprintf(fp, "%f\n", sample.value);
+        lastTimeStamp = sample.timestamp + 1;
     }
     fclose(fp);
     system("python3 ./ts_python/arima_predict.py > python_result_predict.txt");
@@ -1520,7 +1524,32 @@ int TSDB_predict(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     fread(resultt, sizeof(char), numbytes - 10, fp);
     resultt[numbytes - 10] = '\0';
     fclose(fp);
-    RedisModule_ReplyWithSimpleString(ctx, resultt);
+
+    RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+	// split resultt[] into doubles and Reply With Simple String
+    int arrayLen = arima.N;
+    double predictedValue = 0.0;
+    const char *ptrForParsingResultt = resultt;
+    int firstNumberOffset = 0;
+    int lenOfPredictedValue = 0;
+    char tmpReplyString[100000];
+    while(1) {
+        if(resultt[firstNumberOffset] <= '9' && resultt[firstNumberOffset] >= '0') {
+            break;
+        }
+        firstNumberOffset++;
+    }
+    ptrForParsingResultt = ptrForParsingResultt + firstNumberOffset;
+    for(int i=0; i<arima.N; i++){
+        sscanf(ptrForParsingResultt, "%lf%n", &predictedValue, &lenOfPredictedValue);
+        //printf("lenOfPredictedValue: %d\n", lenOfPredictedValue);
+        ptrForParsingResultt = ptrForParsingResultt + lenOfPredictedValue + 1;
+        snprintf(tmpReplyString, sizeof(tmpReplyString), "%d: %lf", lastTimeStamp+i, predictedValue);
+        //printf("number %d: %s\n", i, tmpReplyString);
+    	RedisModule_ReplyWithSimpleString(ctx, tmpReplyString);
+    }
+
+	RedisModule_ReplySetArrayLength(ctx, arrayLen);
 	return REDISMODULE_OK;
 }
 
